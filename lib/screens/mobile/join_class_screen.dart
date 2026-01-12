@@ -1,5 +1,6 @@
 // lib/screens/mobile/join_class_screen.dart
 import 'package:flutter/material.dart';
+import '../../services/api_service.dart';
 
 class JoinClassScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -52,22 +53,79 @@ class _JoinClassScreenState extends State<JoinClassScreen>
     super.dispose();
   }
 
-  void _handleSubmit() {
-    if (_classCodeController.text.trim().isEmpty || _isLoading) return;
+  Future<void> _handleSubmit() async {
+    final code = _classCodeController.text.trim().toUpperCase();
+
+    if (code.isEmpty || _isLoading) return;
+
+    // Validate code format (should be 8 characters)
+    if (code.length != 8) {
+      _showError('Class code must be 8 characters');
+      return;
+    }
 
     setState(() {
       _isLoading = true;
     });
 
-    // Simulate API call
-    Future.delayed(const Duration(seconds: 1), () {
+    try {
+      final result = await ApiService.joinClass(code: code);
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        // Show success message
+        final className = result['data']?['name'] ?? 'the class';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Successfully joined $className!')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        // Navigate back to classes screen
+        widget.onBack();
+      } else {
+        _showError(result['message'] ?? 'Failed to join class');
+      }
+    } catch (e) {
+      _showError('Network error. Please try again.');
+    } finally {
       if (mounted) {
-        widget.onJoinClass(_classCodeController.text);
         setState(() {
           _isLoading = false;
         });
       }
-    });
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFFDC2626),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -80,9 +138,7 @@ class _JoinClassScreenState extends State<JoinClassScreen>
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Colors.blue.shade100),
-              ),
+              border: Border(bottom: BorderSide(color: Colors.blue.shade100)),
             ),
             child: SafeArea(
               bottom: false,
@@ -91,13 +147,16 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                 child: Row(
                   children: [
                     InkWell(
-                      onTap: widget.onBack,
+                      onTap: _isLoading ? null : widget.onBack,
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         padding: const EdgeInsets.all(8),
-                        child: const Icon(
+                        child: Icon(
                           Icons.arrow_back,
-                          color: Color(0xFF1E40AF),
+                          color:
+                              _isLoading
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF1E40AF),
                           size: 20,
                         ),
                       ),
@@ -179,6 +238,7 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                           const SizedBox(height: 6),
                           TextField(
                             controller: _classCodeController,
+                            enabled: !_isLoading,
                             maxLength: 8,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
@@ -194,7 +254,10 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                                 fontWeight: FontWeight.normal,
                               ),
                               filled: true,
-                              fillColor: const Color(0xFFEFF6FF),
+                              fillColor:
+                                  _isLoading
+                                      ? const Color(0xFFF1F5F9)
+                                      : const Color(0xFFEFF6FF),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
@@ -214,6 +277,12 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                                   width: 2,
                                 ),
                               ),
+                              disabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFFE2E8F0),
+                                ),
+                              ),
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 20,
@@ -225,6 +294,7 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                                 text: value.toUpperCase(),
                                 selection: _classCodeController.selection,
                               );
+                              setState(() {}); // <-- Add this line
                             },
                             onSubmitted: (_) => _handleSubmit(),
                           ),
@@ -244,41 +314,47 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed: _isLoading ||
-                                      _classCodeController.text.trim().isEmpty
-                                  ? null
-                                  : _handleSubmit,
+                              onPressed:
+                                  _isLoading ||
+                                          _classCodeController.text
+                                              .trim()
+                                              .isEmpty
+                                      ? null
+                                      : _handleSubmit,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF2563EB),
                                 foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(24),
                                 ),
                                 elevation: 0,
-                                disabledBackgroundColor:
-                                    const Color(0xFF2563EB).withOpacity(0.5),
+                                disabledBackgroundColor: const Color(
+                                  0xFF2563EB,
+                                ).withOpacity(0.5),
                               ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
+                              child:
+                                  _isLoading
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                      : const Text(
+                                        'Join Class',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                    )
-                                  : const Text(
-                                      'Join Class',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
                             ),
                           ),
                         ],
@@ -288,14 +364,14 @@ class _JoinClassScreenState extends State<JoinClassScreen>
 
                       // Info Cards
                       _buildInfoCard(
-                        icon: Icons.add,
+                        icon: Icons.qr_code,
                         title: 'Get the Code',
                         description:
                             'Ask your teacher for the class code. It\'s usually shared in class or via email.',
                       ),
                       const SizedBox(height: 16),
                       _buildInfoCard(
-                        icon: Icons.check,
+                        icon: Icons.flash_on,
                         title: 'Instant Access',
                         description:
                             'Once you join, you\'ll have immediate access to all class materials and assessments.',
@@ -333,11 +409,7 @@ class _JoinClassScreenState extends State<JoinClassScreen>
               color: const Color(0xFF2563EB),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: 16,
-            ),
+            child: Icon(icon, color: Colors.white, size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -357,7 +429,7 @@ class _JoinClassScreenState extends State<JoinClassScreen>
                   description,
                   style: const TextStyle(
                     fontSize: 13,
-                    color: Color(0xFF1E40AF),
+                    color: Color(0xFF475569),
                     height: 1.4,
                   ),
                 ),

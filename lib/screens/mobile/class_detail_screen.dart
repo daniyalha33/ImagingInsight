@@ -1,55 +1,7 @@
 // lib/screens/mobile/class_detail_screen.dart
 import 'package:flutter/material.dart';
-
-class Post {
-  final String id;
-  final String author;
-  final String authorAvatar;
-  final String date;
-  final String content;
-  final int likes;
-
-  Post({
-    required this.id,
-    required this.author,
-    required this.authorAvatar,
-    required this.date,
-    required this.content,
-    required this.likes,
-  });
-}
-
-class FileItem {
-  final String id;
-  final String name;
-  final String type; // 'video' or 'document'
-
-  FileItem({
-    required this.id,
-    required this.name,
-    required this.type,
-  });
-}
-
-class Assessment {
-  final String id;
-  final String title;
-  final String type; // 'mcq' or 'segmentation'
-  final int questions;
-  final String duration;
-  final String dueDate;
-  final String status;
-
-  Assessment({
-    required this.id,
-    required this.title,
-    required this.type,
-    required this.questions,
-    required this.duration,
-    required this.dueDate,
-    required this.status,
-  });
-}
+import 'package:intl/intl.dart';
+import '../../services/api_service.dart';
 
 class ClassDetailScreen extends StatefulWidget {
   final String classId;
@@ -73,79 +25,90 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  final List<Post> posts = [
-    Post(
-      id: '1',
-      author: 'Dr. Tahir Mustafa',
-      authorAvatar: 'TM',
-      date: '18:57, 23 Jun',
-      content: 'All notes are provided.',
-      likes: 12,
-    ),
-  ];
-
-  final List<FileItem> files = [
-    FileItem(
-      id: '1',
-      name: 'CT Scan Fundamentals.mp4',
-      type: 'video',
-    ),
-    FileItem(
-      id: '2',
-      name: 'Abdomen Segmentation Guide.pdf',
-      type: 'document',
-    ),
-  ];
-
-  final List<Assessment> assessments = [
-    Assessment(
-      id: '1',
-      title: 'Radiology Basics Quiz',
-      type: 'mcq',
-      questions: 10,
-      duration: '15 min',
-      dueDate: 'Oct 15, 2025',
-      status: 'Not Started',
-    ),
-    Assessment(
-      id: '2',
-      title: 'Liver Segmentation Task',
-      type: 'segmentation',
-      questions: 3,
-      duration: '20 min',
-      dueDate: 'Oct 18, 2025',
-      status: 'Not Started',
-    ),
-    Assessment(
-      id: '3',
-      title: 'CT Analysis MCQ Test',
-      type: 'mcq',
-      questions: 15,
-      duration: '20 min',
-      dueDate: 'Oct 20, 2025',
-      status: 'Not Started',
-    ),
-    Assessment(
-      id: '4',
-      title: 'Kidney Segmentation Practice',
-      type: 'segmentation',
-      questions: 5,
-      duration: '25 min',
-      dueDate: 'Oct 22, 2025',
-      status: 'Not Started',
-    ),
-  ];
+  Map<String, dynamic>? _classData;
+  List<dynamic> _posts = [];
+  List<dynamic> _files = [];
+  List<dynamic> _tests = [];
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _loadClassData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadClassData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      // Load class details, posts, files, and tests in parallel
+      final results = await Future.wait([
+        ApiService.getClassDetails(widget.classId),
+        ApiService.getPosts(widget.classId),
+        ApiService.getFiles(widget.classId),
+        ApiService.getTests(widget.classId),
+      ]);
+
+      if (!mounted) return;
+
+      // Process class details
+      if (results[0]['success'] == true) {
+        _classData = results[0]['data'];
+      }
+
+      // Process posts
+      if (results[1]['success'] == true) {
+        _posts = results[1]['data'] ?? [];
+      }
+
+      // Process files
+      if (results[2]['success'] == true) {
+        _files = results[2]['data'] ?? [];
+      }
+
+      // Process tests
+      if (results[3]['success'] == true) {
+        _tests = results[3]['data'] ?? [];
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load class data';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _formatDate(String dateStr) {
+    try {
+      final date = DateTime.parse(dateStr);
+      return DateFormat('HH:mm, dd MMM').format(date);
+    } catch (e) {
+      return dateStr;
+    }
+  }
+
+  String _getInitials(String name) {
+    final parts = name.trim().split(' ');
+    if (parts.isEmpty) return '??';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
   }
 
   @override
@@ -176,12 +139,16 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                       constraints: const BoxConstraints(),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      'Radiology',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E40AF),
+                    Expanded(
+                      child: Text(
+                        _classData?['name'] ?? 'Loading...',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E40AF),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -213,14 +180,58 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
 
           // Tab Content
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPostsTab(),
-                _buildFilesTab(),
-                _buildAssessmentsTab(),
-              ],
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF2563EB),
+                    ),
+                  )
+                : _error != null
+                    ? _buildErrorView()
+                    : TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildPostsTab(),
+                          _buildFilesTab(),
+                          _buildAssessmentsTab(),
+                        ],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 64,
+            color: Colors.red.shade300,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _error!,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFF64748B),
             ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _loadClassData,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
+              ),
+            ),
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -228,42 +239,178 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
   }
 
   Widget _buildPostsTab() {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: posts.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final post = posts[index];
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue.shade100),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+    if (_posts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.post_add_outlined,
+              size: 64,
+              color: Colors.blue.shade200,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No posts yet',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF64748B),
               ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Author Info
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: const Color(0xFF2463EB),
-                    child: Text(
-                      post.authorAvatar,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadClassData,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _posts.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final post = _posts[index];
+          final author = post['author'] as Map<String, dynamic>? ?? {};
+          final authorName = author['name'] ?? 'Unknown';
+
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.shade100),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 20,
+                      backgroundColor: const Color(0xFF2463EB),
+                      child: Text(
+                        _getInitials(authorName),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            authorName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E40AF),
+                            ),
+                          ),
+                          Text(
+                            _formatDate(post['createdAt'] ?? ''),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  post['content'] ?? '',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilesTab() {
+    if (_files.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.folder_open_outlined,
+              size: 64,
+              color: Colors.blue.shade200,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No files yet',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadClassData,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _files.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final file = _files[index];
+          final fileType = file['type'] ?? 'document';
+
+          return InkWell(
+            onTap: () => widget.onOpenContent(file['_id'], fileType),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade100),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCEAFE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      fileType == 'video'
+                          ? Icons.play_circle_outline
+                          : Icons.description_outlined,
+                      size: 20,
+                      color: const Color(0xFF2463EB),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -272,342 +419,213 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          post.author,
+                          file['name'] ?? 'Unnamed File',
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF1E40AF),
                           ),
                         ),
-                        Text(
-                          post.date,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                          ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              fileType[0].toUpperCase() +
+                                  fileType.substring(1),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            if (file['downloads'] != null) ...[
+                              const Text(' • ',
+                                  style: TextStyle(color: Color(0xFF64748B))),
+                              Text(
+                                '${file['downloads']} downloads',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
+                      ],
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAssessmentsTab() {
+    if (_tests.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.assignment_outlined,
+              size: 64,
+              color: Colors.blue.shade200,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No tests yet',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadClassData,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: _tests.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final test = _tests[index];
+          final isMcq = test['type'] == 'mcq';
+          final questions = test['questions'] as List? ?? [];
+
+          return InkWell(
+            onTap: () => widget.onOpenAssessment(test['_id'], test['type']),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade100),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isMcq
+                          ? const Color(0xFFF3E8FF)
+                          : const Color(0xFFD1FAE5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      isMcq ? Icons.list_alt : Icons.edit_outlined,
+                      size: 20,
+                      color: isMcq
+                          ? const Color(0xFF9333EA)
+                          : const Color(0xFF059669),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                test['title'] ?? 'Unnamed Test',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1E40AF),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isMcq
+                                    ? const Color(0xFFF3E8FF)
+                                    : const Color(0xFFD1FAE5),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isMcq ? 'MCQ' : 'Drawing',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isMcq
+                                      ? const Color(0xFF9333EA)
+                                      : const Color(0xFF059669),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              '${questions.length} questions',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const Text(
+                              ' • ',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            Text(
+                              '${test['duration'] ?? 0} min',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (test['dueDate'] != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Due: ${DateFormat('MMM dd, yyyy').format(DateTime.parse(test['dueDate']))}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ],
               ),
-
-              const SizedBox(height: 12),
-
-              // Post Content
-              const Text(
-                'Announcement:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E40AF),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                post.content,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Actions
-              Container(
-                padding: const EdgeInsets.only(top: 12),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: Colors.blue.shade100),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    InkWell(
-                      onTap: () {},
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.favorite_border,
-                            size: 18,
-                            color: Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${post.likes}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 24),
-                    InkWell(
-                      onTap: () {},
-                      child: Row(
-                        children: const [
-                          Icon(
-                            Icons.message_outlined,
-                            size: 18,
-                            color: Color(0xFF2463EB),
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'Reply',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Color(0xFF2463EB),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildFilesTab() {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: files.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final file = files[index];
-        return InkWell(
-          onTap: () => widget.onOpenContent(file.id, file.type),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.shade100),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
             ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDCEAFE),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.attach_file,
-                    size: 20,
-                    color: Color(0xFF2463EB),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        file.name,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E40AF),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        file.type[0].toUpperCase() + file.type.substring(1),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  color: Color(0xFF94A3B8),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAssessmentsTab() {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: assessments.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final assessment = assessments[index];
-        final isMcq = assessment.type == 'mcq';
-        
-        return InkWell(
-          onTap: () => widget.onOpenAssessment(assessment.id, assessment.type),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blue.shade100),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: isMcq
-                        ? const Color(0xFFF3E8FF)
-                        : const Color(0xFFD1FAE5),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    isMcq ? Icons.list_alt : Icons.edit_outlined,
-                    size: 20,
-                    color: isMcq
-                        ? const Color(0xFF9333EA)
-                        : const Color(0xFF059669),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              assessment.title,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1E40AF),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isMcq
-                                  ? const Color(0xFFF3E8FF)
-                                  : const Color(0xFFD1FAE5),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              isMcq ? 'MCQ' : 'Drawing',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: isMcq
-                                    ? const Color(0xFF9333EA)
-                                    : const Color(0xFF059669),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            '${assessment.questions} questions',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                          const Text(
-                            ' • ',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                          Text(
-                            assessment.duration,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Due: ${assessment.dueDate}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              border: Border.all(
-                                color: const Color(0xFFFDE68A),
-                              ),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              assessment.status,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFFA16207),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

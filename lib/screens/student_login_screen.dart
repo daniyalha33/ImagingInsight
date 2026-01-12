@@ -1,14 +1,15 @@
 // lib/screens/student_login_screen.dart
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class StudentLoginScreen extends StatefulWidget {
-  final Function(String, String) onLogin;
+  final Function(Map<String, dynamic>) onLoginSuccess;
   final VoidCallback onNavigateToSignUp;
   final VoidCallback onNavigateToPasswordRecovery;
 
   const StudentLoginScreen({
     Key? key,
-    required this.onLogin,
+    required this.onLoginSuccess,
     required this.onNavigateToSignUp,
     required this.onNavigateToPasswordRecovery,
   }) : super(key: key);
@@ -22,6 +23,8 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -30,9 +33,46 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
     super.dispose();
   }
 
-  void _handleLogin() {
-    if (_formKey.currentState!.validate()) {
-      widget.onLogin(_emailController.text, _passwordController.text);
+  Future<void> _handleLogin() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final result = await ApiService.login(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (mounted) {
+        if (result['success']) {
+          // Check if user is a student
+          if (result['user']['role'] != 'student') {
+            setState(() {
+              _errorMessage = 'This login is for students only';
+              _isLoading = false;
+            });
+            return;
+          }
+
+          widget.onLoginSuccess(result['user']);
+        } else {
+          setState(() {
+            _errorMessage = result['message'] ?? 'Login failed';
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'An error occurred. Please try again.';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -49,7 +89,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 60),
-                
+
                 // Logo
                 Center(
                   child: Container(
@@ -66,9 +106,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // App Name
                 const Center(
                   child: Text(
@@ -80,9 +120,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Welcome Text
                 const Text(
                   'Welcome Back, Student',
@@ -92,9 +132,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     color: Color(0xFF1E40AF),
                   ),
                 ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Subtitle
                 const Text(
                   'Login to continue your learning',
@@ -103,12 +143,43 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     color: Color(0xFF64748B),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
-                // Email / Name Field
+
+                // Error Message
+                if (_errorMessage != null)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.error_outline,
+                          color: Color(0xFFDC2626),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(
+                              color: Color(0xFFDC2626),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Email Field
                 const Text(
-                  'Email / Name',
+                  'Email',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -119,8 +190,9 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
+                  enabled: !_isLoading,
                   decoration: InputDecoration(
-                    hintText: 'Enter your email or name',
+                    hintText: 'Enter your email',
                     hintStyle: const TextStyle(
                       color: Color(0xFF94A3B8),
                       fontSize: 14,
@@ -153,14 +225,17 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your email or name';
+                      return 'Please enter your email';
+                    }
+                    if (!value.contains('@')) {
+                      return 'Please enter a valid email';
                     }
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Password Field
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -174,7 +249,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: widget.onNavigateToPasswordRecovery,
+                      onTap: _isLoading ? null : widget.onNavigateToPasswordRecovery,
                       child: const Text(
                         'Forgot?',
                         style: TextStyle(
@@ -190,6 +265,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
+                  enabled: !_isLoading,
                   decoration: InputDecoration(
                     hintText: 'Enter your password',
                     hintStyle: const TextStyle(
@@ -228,11 +304,13 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                             : Icons.visibility_outlined,
                         color: const Color(0xFF64748B),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
                     ),
                   ),
                   validator: (value) {
@@ -242,15 +320,15 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Login Button
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _handleLogin,
+                    onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2463EB),
                       foregroundColor: Colors.white,
@@ -258,19 +336,31 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      disabledBackgroundColor:
+                          const Color(0xFF2463EB).withOpacity(0.6),
                     ),
-                    child: const Text(
-                      'Log In',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text(
+                            'Log In',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Sign Up Link
                 Center(
                   child: Row(
@@ -284,7 +374,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: widget.onNavigateToSignUp,
+                        onTap: _isLoading ? null : widget.onNavigateToSignUp,
                         child: const Text(
                           'Sign up',
                           style: TextStyle(
@@ -297,7 +387,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 40),
               ],
             ),

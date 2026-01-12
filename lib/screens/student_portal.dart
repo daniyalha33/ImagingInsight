@@ -7,20 +7,14 @@ import 'mobile/segmentation_assessment_screen.dart';
 import 'mobile/assessment_screen.dart';
 import 'mobile/segmentation_result_screen.dart';
 import 'mobile/mcq_result_screen.dart';
-
 import 'mobile/profile_screen.dart';
 import 'mobile/chat_screen.dart';
 import 'mobile/performance_screen.dart';
 import 'mobile/chat_list_screen.dart';
 import 'mobile/content_viewer_screen.dart';
 import 'mobile/join_class_screen.dart';
-// Import your screen files (create these next)
-// import 'mobile/classes_screen.dart';
-// import 'mobile/chat_list_screen.dart';
-// import 'mobile/ai_segmentation_screen.dart';
-// import 'mobile/performance_screen.dart';
-// import 'mobile/profile_screen.dart';
 import 'mobile/class_detail_screen.dart';
+
 class StudentPortal extends StatefulWidget {
   final String userName;
   final String userEmail;
@@ -65,6 +59,9 @@ class ScreenState {
 class _StudentPortalState extends State<StudentPortal> {
   int _selectedIndex = 0;
   ScreenState _currentScreen = ScreenState(ScreenType.classes);
+  
+  // Track the last classId for better navigation
+  String? _lastClassId;
 
   void _onTabChange(int index) {
     setState(() {
@@ -92,7 +89,53 @@ class _StudentPortalState extends State<StudentPortal> {
   void _navigateToScreen(ScreenState screen) {
     setState(() {
       _currentScreen = screen;
+      
+      // Save classId for better back navigation
+      if (screen.type == ScreenType.classDetail) {
+        _lastClassId = screen.params?['classId'];
+      }
     });
+  }
+
+  void _navigateBack() {
+    // Smart back navigation
+    switch (_currentScreen.type) {
+      case ScreenType.joinClass:
+      case ScreenType.classDetail:
+        _navigateToScreen(ScreenState(ScreenType.classes));
+        setState(() => _selectedIndex = 0);
+        break;
+        
+      case ScreenType.contentViewer:
+      case ScreenType.assessmentMcq:
+      case ScreenType.assessmentSegmentation:
+      case ScreenType.mcqResult:
+      case ScreenType.segmentationResult:
+        // Go back to class detail
+        if (_lastClassId != null) {
+          _navigateToScreen(
+            ScreenState(ScreenType.classDetail, params: {'classId': _lastClassId}),
+          );
+        } else {
+          _navigateToScreen(ScreenState(ScreenType.classes));
+          setState(() => _selectedIndex = 0);
+        }
+        break;
+        
+      case ScreenType.chat:
+        _navigateToScreen(ScreenState(ScreenType.chatList));
+        setState(() => _selectedIndex = 1);
+        break;
+        
+      case ScreenType.aiReport:
+        _navigateToScreen(ScreenState(ScreenType.aiSegmentation));
+        setState(() => _selectedIndex = 2);
+        break;
+        
+      default:
+        // For main tabs, just switch to that tab
+        break;
+    }
   }
 
   Widget _buildScreen() {
@@ -111,27 +154,26 @@ class _StudentPortalState extends State<StudentPortal> {
 
       case ScreenType.joinClass:
         return JoinClassScreen(
-          onBack: () {
-            _navigateToScreen(ScreenState(ScreenType.classes));
-          },
+          onBack: _navigateBack,
           onJoinClass: (classCode) {
-            // In a real app, make API call to join class
-            print('Joining class with code: $classCode');
+            // Backend integration handles this now
+            // Just navigate back - classes screen will reload
             _navigateToScreen(ScreenState(ScreenType.classes));
           },
         );
 
       case ScreenType.classDetail:
         return ClassDetailScreen(
-          classId: _currentScreen.params?['classId'] ?? '1',
-          onBack: () {
-            _navigateToScreen(ScreenState(ScreenType.classes));
-          },
+          classId: _currentScreen.params?['classId'] ?? '',
+          onBack: _navigateBack,
           onOpenContent: (contentId, contentType) {
             _navigateToScreen(
               ScreenState(
                 ScreenType.contentViewer,
-                params: {'contentId': contentId, 'contentType': contentType},
+                params: {
+                  'contentId': contentId,
+                  'contentType': contentType,
+                },
               ),
             );
           },
@@ -158,20 +200,11 @@ class _StudentPortalState extends State<StudentPortal> {
         return ContentViewerScreen(
           contentId: _currentScreen.params?['contentId'] ?? '',
           contentType: _currentScreen.params?['contentType'] ?? 'video',
-          onBack: () {
-            _navigateToScreen(
-              ScreenState(ScreenType.classDetail, params: {'classId': '1'}),
-            );
-          },
+          onBack: _navigateBack,
         );
-
       case ScreenType.assessmentMcq:
         return AssessmentScreen(
-          onBack: () {
-            _navigateToScreen(
-              ScreenState(ScreenType.classDetail, params: {'classId': '1'}),
-            );
-          },
+          onBack: _navigateBack,
           onComplete: () {
             _navigateToScreen(ScreenState(ScreenType.mcqResult));
           },
@@ -179,11 +212,7 @@ class _StudentPortalState extends State<StudentPortal> {
 
       case ScreenType.assessmentSegmentation:
         return SegmentationAssessmentScreen(
-          onBack: () {
-            _navigateToScreen(
-              ScreenState(ScreenType.classDetail, params: {'classId': '1'}),
-            );
-          },
+          onBack: _navigateBack,
           onComplete: () {
             _navigateToScreen(ScreenState(ScreenType.segmentationResult));
           },
@@ -191,20 +220,12 @@ class _StudentPortalState extends State<StudentPortal> {
 
       case ScreenType.mcqResult:
         return MCQResultScreen(
-          onBack: () {
-            _navigateToScreen(
-              ScreenState(ScreenType.classDetail, params: {'classId': '1'}),
-            );
-          },
+          onBack: _navigateBack,
         );
 
       case ScreenType.segmentationResult:
         return SegmentationResultScreen(
-          onBack: () {
-            _navigateToScreen(
-              ScreenState(ScreenType.classDetail, params: {'classId': '1'}),
-            );
-          },
+          onBack: _navigateBack,
         );
 
       case ScreenType.chatList:
@@ -225,58 +246,37 @@ class _StudentPortalState extends State<StudentPortal> {
             );
           },
         );
-
       case ScreenType.chat:
         return ChatScreen(
           teacherId: _currentScreen.params?['teacherId'] ?? '',
           teacherName: _currentScreen.params?['teacherName'] ?? 'Teacher',
+          onBack: _navigateBack,
+        );
+
+      case ScreenType.aiSegmentation:
+        return AISegmentationScreen(
+          onGenerateReport: (Map<String, dynamic> reportData) {
+            _navigateToScreen(
+              ScreenState(
+                ScreenType.aiReport,
+                params: {'reportData': reportData},
+              ),
+            );
+          },
           onBack: () {
-            _navigateToScreen(ScreenState(ScreenType.chatList));
+            _navigateToScreen(ScreenState(ScreenType.classes));
+            setState(() => _selectedIndex = 0);
           },
         );
 
-   // Replace your aiSegmentation and aiReport cases with these fixed versions:
+      case ScreenType.aiReport:
+        final reportData = _currentScreen.params?['reportData'] as Map<String, dynamic>?;
+        
+        return AIReportScreen(
+          onBack: _navigateBack,
+          reportData: reportData,
+        );
 
-case ScreenType.aiSegmentation:
-  return AISegmentationScreen(
-    onGenerateReport: (Map<String, dynamic> reportData) {
-      // ✅ DEBUG: Print what we're passing
-      print('🔄 StudentPortal: Navigating to report with data');
-      print('   Keys: ${reportData.keys.toList()}');
-      print('   Organs: ${reportData['organs']?.length}');
-      
-      // ✅ Pass the entire reportData as params
-      _navigateToScreen(
-        ScreenState(
-          ScreenType.aiReport, 
-          params: {'reportData': reportData} // ✅ Wrap in a map
-        )
-      );
-    },
-    onBack: () {
-      _navigateToScreen(ScreenState(ScreenType.classes));
-    },
-  );
-
-case ScreenType.aiReport:
-  // ✅ FIX: Extract reportData from params
-  final reportData = _currentScreen.params?['reportData'] as Map<String, dynamic>?;
-  
-  // ✅ DEBUG: Verify we received the data
-  print('📱 StudentPortal: Building AIReportScreen');
-  print('   Current screen params: ${_currentScreen.params?.keys.toList()}');
-  print('   Report data null? ${reportData == null}');
-  if (reportData != null) {
-    print('   Report data keys: ${reportData.keys.toList()}');
-    print('   Organs count: ${reportData['organs']?.length}');
-  }
-  
-  return AIReportScreen(
-    onBack: () {
-      _navigateToScreen(ScreenState(ScreenType.aiSegmentation));
-    },
-    reportData: reportData, // ✅ Pass the actual data!
-  );
       case ScreenType.performance:
         return PerformanceScreen(userName: widget.userName);
 
@@ -286,55 +286,74 @@ case ScreenType.aiReport:
           userEmail: widget.userEmail,
           onLogout: widget.onLogout,
         );
-
-      
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFEFF6FF), Colors.white],
-          ),
-        ),
-        child: _buildScreen(),
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            top: BorderSide(color: Colors.blue.shade100, width: 1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
+    return WillPopScope(
+      onWillPop: () async {
+        // Handle Android back button
+        if (_isMainTab()) {
+          // If on main tab, allow exit
+          return true;
+        } else {
+          // Otherwise, navigate back within app
+          _navigateBack();
+          return false;
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFEFF6FF), Colors.white],
             ),
-          ],
+          ),
+          child: _buildScreen(),
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(0, Icons.book_outlined, 'Classes'),
-                _buildNavItem(1, Icons.chat_bubble_outline, 'Chat'),
-                _buildNavItem(2, Icons.scanner_outlined, 'AI Scan'),
-                _buildNavItem(3, Icons.emoji_events_outlined, 'Performance'),
-                _buildNavItem(4, Icons.person_outline, 'Profile'),
-              ],
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: Colors.blue.shade100, width: 1),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildNavItem(0, Icons.book_outlined, 'Classes'),
+                  _buildNavItem(1, Icons.chat_bubble_outline, 'Chat'),
+                  _buildNavItem(2, Icons.scanner_outlined, 'AI Scan'),
+                  _buildNavItem(3, Icons.emoji_events_outlined, 'Performance'),
+                  _buildNavItem(4, Icons.person_outline, 'Profile'),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  bool _isMainTab() {
+    return _currentScreen.type == ScreenType.classes ||
+        _currentScreen.type == ScreenType.chatList ||
+        _currentScreen.type == ScreenType.aiSegmentation ||
+        _currentScreen.type == ScreenType.performance ||
+        _currentScreen.type == ScreenType.profile;
   }
 
   Widget _buildNavItem(int index, IconData icon, String label) {
@@ -376,20 +395,3 @@ case ScreenType.aiReport:
     );
   }
 }
-
-// ==================== PLACEHOLDER SCREENS ====================
-// Replace these with actual implementations
-
-
-
-
-
-
-
-
-
-
-
-
-
-

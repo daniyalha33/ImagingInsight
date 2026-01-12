@@ -1,7 +1,7 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
+import 'services/api_service.dart';
 // Import your screens
 import 'screens/student_login_screen.dart';
 import 'screens/student_signup_screen.dart';
@@ -12,15 +12,41 @@ import 'screens/student_portal.dart';
 enum UserRole { student, teacher, principal }
 
 class UserData {
+  final String id;
   final String name;
   final String email;
   final UserRole role;
+  final String? profileImage;
 
   UserData({
+    required this.id,
     required this.name,
     required this.email,
     required this.role,
+    this.profileImage,
   });
+
+  factory UserData.fromJson(Map<String, dynamic> json) {
+    UserRole role = UserRole.student;
+    switch (json['role']) {
+      case 'teacher':
+        role = UserRole.teacher;
+        break;
+      case 'principal':
+        role = UserRole.principal;
+        break;
+      default:
+        role = UserRole.student;
+    }
+
+    return UserData(
+      id: json['id'] ?? json['_id'] ?? '',
+      name: json['name'] ?? '',
+      email: json['email'] ?? '',
+      role: role,
+      profileImage: json['profileImage'],
+    );
+  }
 }
 
 // Main App
@@ -72,48 +98,82 @@ class _AppNavigatorState extends State<AppNavigator> {
   @override
   void initState() {
     super.initState();
-    _startLoadingScreen();
+    _checkAuthStatus();
   }
 
-  void _startLoadingScreen() {
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        setState(() => _currentScreen = AppScreen.studentLogin);
+  Future<void> _checkAuthStatus() async {
+    // Check if user is already logged in
+    final isLoggedIn = await ApiService.isLoggedIn();
+    
+    if (isLoggedIn) {
+      // Get saved user data
+      final user = await ApiService.getUserData();
+      if (user != null && mounted) {
+        setState(() {
+          _userData = UserData.fromJson(user);
+          _currentScreen = AppScreen.studentPortal;
+        });
+        return;
       }
-    });
+    }
+
+    // If not logged in, show login screen after delay
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (mounted) {
+      setState(() => _currentScreen = AppScreen.studentLogin);
+    }
   }
 
-  void _handleSignUp(Map<String, dynamic> data) {
+  void _handleSignUpSuccess(Map<String, dynamic> result) {
+    // Extract user data from registration result
+    if (result['success'] == true && result['user'] != null) {
+      setState(() {
+        _userData = UserData.fromJson(result['user']);
+        _currentScreen = AppScreen.studentPortal;
+      });
+    } else {
+      // If registration failed, stay on signup screen
+      // Error message is already shown by the signup screen
+      setState(() => _currentScreen = AppScreen.studentSignup);
+    }
+  }
+
+  void _handleLoginSuccess(Map<String, dynamic> user) {
     setState(() {
-      _userData = UserData(
-        name: data['name'],
-        email: data['email'],
-        role: UserRole.student,
-      );
+      _userData = UserData.fromJson(user);
       _currentScreen = AppScreen.studentPortal;
     });
   }
 
-  void _handleLogin(String email, String password) {
-    final name = email.contains('@') ? email.split('@')[0] : email;
-    final capitalizedName = name[0].toUpperCase() + name.substring(1);
-    final fullEmail = email.contains('@') ? email : '$email@imaginginsight.com';
-
-    setState(() {
-      _userData = UserData(
-        name: capitalizedName,
-        email: fullEmail,
-        role: UserRole.student,
-      );
-      _currentScreen = AppScreen.studentPortal;
-    });
-  }
-
-  void _handleLogout() {
+  Future<void> _handleLogout() async {
+    // Clear session data
+    await ApiService.logout();
+    
     setState(() {
       _userData = null;
       _currentScreen = AppScreen.studentLogin;
     });
+
+    // Show logout message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.logout, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Logged out successfully'),
+            ],
+          ),
+          backgroundColor: const Color(0xFF10B981),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Widget _buildScreen() {
@@ -123,15 +183,15 @@ class _AppNavigatorState extends State<AppNavigator> {
 
       case AppScreen.studentLogin:
         return StudentLoginScreen(
-          onLogin: _handleLogin,
+          onLoginSuccess: _handleLoginSuccess,
           onNavigateToSignUp: () => setState(() => _currentScreen = AppScreen.studentSignup),
           onNavigateToPasswordRecovery: () => setState(() => _currentScreen = AppScreen.passwordRecovery),
         );
 
       case AppScreen.studentSignup:
         return StudentSignUpScreen(
-          onSignUp: _handleSignUp,
           onNavigateToLogin: () => setState(() => _currentScreen = AppScreen.studentLogin),
+          onSignUpSuccess: _handleSignUpSuccess,
         );
 
       case AppScreen.passwordRecovery:
@@ -191,7 +251,10 @@ class LoadingScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 40),
-            const CircularProgressIndicator(color: Colors.white),
+            const CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 3,
+            ),
           ],
         ),
       ),

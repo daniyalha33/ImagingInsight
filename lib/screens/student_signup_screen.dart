@@ -2,15 +2,17 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:convert';
+import '../services/api_service.dart';
 
 class StudentSignUpScreen extends StatefulWidget {
-  final Function(Map<String, dynamic>) onSignUp;
   final VoidCallback onNavigateToLogin;
+  final Function(Map<String, dynamic>) onSignUpSuccess;
 
   const StudentSignUpScreen({
     Key? key,
-    required this.onSignUp,
     required this.onNavigateToLogin,
+    required this.onSignUpSuccess,
   }) : super(key: key);
 
   @override
@@ -23,6 +25,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
   final _nameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _isLoading = false;
   File? _profileImage;
   final ImagePicker _picker = ImagePicker();
 
@@ -42,29 +45,125 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
         maxHeight: 512,
         imageQuality: 85,
       );
-      
+
       if (image != null) {
         setState(() {
           _profileImage = File(image.path);
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error picking image: $e')),
-      );
+      _showErrorSnackBar('Error picking image: $e');
     }
   }
 
-  void _handleSignUp() {
-    if (_formKey.currentState!.validate()) {
-      widget.onSignUp({
-        'email': _emailController.text,
-        'name': _nameController.text,
-        'password': _passwordController.text,
-        'role': 'student',
-        'profileImage': _profileImage?.path,
-      });
+  Future<String?> _convertImageToBase64() async {
+    if (_profileImage == null) return null;
+
+    try {
+      final bytes = await _profileImage!.readAsBytes();
+      final base64String = base64Encode(bytes);
+      // Get file extension
+      final extension = _profileImage!.path.split('.').last.toLowerCase();
+      final mimeType = extension == 'png' ? 'image/png' : 'image/jpeg';
+      return 'data:$mimeType;base64,$base64String';
+    } catch (e) {
+      print('Error converting image: $e');
+      return null;
     }
+  }
+
+  Future<void> _handleSignUp() async {
+    if (!_formKey.currentState!.validate() || _isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Convert image to base64 if exists
+      String? profileImageBase64;
+      if (_profileImage != null) {
+        profileImageBase64 = await _convertImageToBase64();
+      }
+
+      // Call the register API
+      final result = await ApiService.register(
+        email: _emailController.text.trim(),
+        name: _nameController.text.trim(),
+        password: _passwordController.text,
+        profileImage: profileImageBase64,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        // Show success message
+        _showSuccessSnackBar(
+          result['message'] ?? 'Registration successful!',
+        );
+
+        // Wait a bit for user to see the message
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Navigate or callback with user data
+        widget.onSignUpSuccess(result);
+      } else {
+        // Show error message
+        _showErrorSnackBar(
+          result['message'] ?? 'Registration failed. Please try again.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('Network error. Please check your connection.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: const Color(0xFFDC2626),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -80,7 +179,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 40),
-                
+
                 // Logo
                 Center(
                   child: Container(
@@ -97,9 +196,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // App Name
                 const Center(
                   child: Text(
@@ -111,9 +210,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Get Started Text
                 const Text(
                   'Get Started',
@@ -123,9 +222,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     color: Color(0xFF1E40AF),
                   ),
                 ),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Subtitle
                 const Text(
                   'Create your student account',
@@ -134,9 +233,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     color: Color(0xFF64748B),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Email Field
                 const Text(
                   'Email',
@@ -149,6 +248,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
+                  enabled: !_isLoading,
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
@@ -157,7 +257,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                       fontSize: 14,
                     ),
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: _isLoading
+                        ? const Color(0xFFF1F5F9)
+                        : const Color(0xFFF8FAFC),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(
@@ -177,6 +279,12 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                         width: 2,
                       ),
                     ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 16,
@@ -186,15 +294,18 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your email';
                     }
-                    if (!value.contains('@')) {
+                    final emailRegex = RegExp(
+                      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+                    );
+                    if (!emailRegex.hasMatch(value)) {
                       return 'Please enter a valid email';
                     }
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Name Field
                 const Text(
                   'Name',
@@ -207,6 +318,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _nameController,
+                  enabled: !_isLoading,
                   decoration: InputDecoration(
                     hintText: 'Enter your name',
                     hintStyle: const TextStyle(
@@ -214,7 +326,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                       fontSize: 14,
                     ),
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: _isLoading
+                        ? const Color(0xFFF1F5F9)
+                        : const Color(0xFFF8FAFC),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(
@@ -234,6 +348,12 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                         width: 2,
                       ),
                     ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 16,
@@ -243,12 +363,15 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your name';
                     }
+                    if (value.trim().length < 2) {
+                      return 'Name must be at least 2 characters';
+                    }
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Password Field
                 const Text(
                   'Password',
@@ -261,6 +384,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
+                  enabled: !_isLoading,
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     hintText: 'Create a password',
@@ -269,7 +393,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                       fontSize: 14,
                     ),
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: _isLoading
+                        ? const Color(0xFFF1F5F9)
+                        : const Color(0xFFF8FAFC),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: const BorderSide(
@@ -289,6 +415,12 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                         width: 2,
                       ),
                     ),
+                    disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
                       vertical: 16,
@@ -298,13 +430,17 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                         _obscurePassword
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        color: const Color(0xFF64748B),
+                        color: _isLoading
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF64748B),
                       ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
                     ),
                   ),
                   validator: (value) {
@@ -317,9 +453,9 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     return null;
                   },
                 ),
-                
+
                 const SizedBox(height: 20),
-                
+
                 // Profile Picture (Optional)
                 const Text(
                   'Profile Picture (Optional)',
@@ -331,7 +467,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                 ),
                 const SizedBox(height: 8),
                 InkWell(
-                  onTap: _pickImage,
+                  onTap: _isLoading ? null : _pickImage,
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(
@@ -339,29 +475,39 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                       vertical: 16,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0F9FF),
+                      color: _isLoading
+                          ? const Color(0xFFF1F5F9)
+                          : const Color(0xFFF0F9FF),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFFBAE6FD),
+                        color: _isLoading
+                            ? const Color(0xFFE2E8F0)
+                            : const Color(0xFFBAE6FD),
                         style: BorderStyle.solid,
                       ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.upload_outlined,
-                          color: Color(0xFF2463EB),
+                        Icon(
+                          _profileImage != null
+                              ? Icons.check_circle
+                              : Icons.upload_outlined,
+                          color: _isLoading
+                              ? const Color(0xFF94A3B8)
+                              : const Color(0xFF2463EB),
                           size: 20,
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             _profileImage != null
-                                ? 'Image selected'
+                                ? 'Image selected ✓'
                                 : 'Upload profile picture',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
-                              color: Color(0xFF2463EB),
+                              color: _isLoading
+                                  ? const Color(0xFF94A3B8)
+                                  : const Color(0xFF2463EB),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -370,15 +516,15 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Sign Up Button
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _handleSignUp,
+                    onPressed: _isLoading ? null : _handleSignUp,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2463EB),
                       foregroundColor: Colors.white,
@@ -386,19 +532,32 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      disabledBackgroundColor:
+                          const Color(0xFF2463EB).withOpacity(0.5),
                     ),
-                    child: const Text(
-                      'Sign Up',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Sign Up',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Login Link
                 Center(
                   child: Row(
@@ -412,12 +571,14 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                         ),
                       ),
                       GestureDetector(
-                        onTap: widget.onNavigateToLogin,
-                        child: const Text(
+                        onTap: _isLoading ? null : widget.onNavigateToLogin,
+                        child: Text(
                           'Log in',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Color(0xFF2463EB),
+                            color: _isLoading
+                                ? const Color(0xFF94A3B8)
+                                : const Color(0xFF2463EB),
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -425,7 +586,7 @@ class _StudentSignUpScreenState extends State<StudentSignUpScreen> {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 40),
               ],
             ),

@@ -20,7 +20,7 @@ class AISegmentationScreen extends StatefulWidget {
 
 class _AISegmentationScreenState extends State<AISegmentationScreen> {
   // Backend configuration - UPDATE THIS WITH YOUR NGROK URL!
-  final String backendUrl = 'https://languishing-pelagial-scott.ngrok-free.dev';
+  final String backendUrl = 'https://fungous-physiognomically-herta.ngrok-free.dev';
   
   // State variables
   bool _uploadedFile = false;
