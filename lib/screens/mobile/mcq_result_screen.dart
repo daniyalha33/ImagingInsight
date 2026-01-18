@@ -3,20 +3,56 @@ import 'package:flutter/material.dart';
 
 class MCQResultScreen extends StatelessWidget {
   final VoidCallback onBack;
+  final Map<String, dynamic> testResult;
 
   const MCQResultScreen({
     Key? key,
     required this.onBack,
+    required this.testResult,
   }) : super(key: key);
+
+  // Helper to safely convert to double
+  double _toDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value.replaceAll('%', '').trim()) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  // Helper to safely convert to int
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
+  }
+
+  String _calculateGrade(double percentage) {
+    if (percentage >= 90) return 'A';
+    if (percentage >= 80) return 'B';
+    if (percentage >= 70) return 'C';
+    if (percentage >= 60) return 'D';
+    return 'F';
+  }
 
   @override
   Widget build(BuildContext context) {
-    const int totalQuestions = 10;
-    const int correctAnswers = 8;
-    const int incorrectAnswers = 2;
-    const double percentage = (correctAnswers / totalQuestions) * 100;
+    // Parse values safely - handle both int and double
+    final totalQuestions = _toInt(testResult['totalQuestions']);
+    final rawScore = _toInt(testResult['rawScore'] ?? testResult['correctAnswers']);
+    final correctAnswers = rawScore;
+    final incorrectAnswers = totalQuestions - correctAnswers;
+    
+    // Handle percentage - could be int, double, or string
+    final percentage = _toDouble(testResult['percentage'] ?? testResult['score']);
+    final grade = testResult['grade'] ?? _calculateGrade(percentage);
 
-    final grade = _getGrade(percentage);
     final gradeColor = _getGradeColor(grade);
     final gradeTextColor = _getGradeTextColor(grade);
 
@@ -102,8 +138,8 @@ class MCQResultScreen extends StatelessWidget {
                               Container(
                                 width: 48,
                                 height: 48,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFDCFCE7),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -121,9 +157,9 @@ class MCQResultScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              const Text(
+                              Text(
                                 '$correctAnswers/$totalQuestions',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF059669),
@@ -147,8 +183,8 @@ class MCQResultScreen extends StatelessWidget {
                               Container(
                                 width: 48,
                                 height: 48,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEE2E2),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFFEE2E2),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
@@ -166,9 +202,9 @@ class MCQResultScreen extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              const Text(
+                              Text(
                                 '$incorrectAnswers/$totalQuestions',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFFDC2626),
@@ -312,53 +348,23 @@ class MCQResultScreen extends StatelessWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onBack,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Try Another'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1E293B),
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                  ),
+            child: ElevatedButton.icon(
+              onPressed: onBack,
+              icon: const Icon(Icons.home, size: 18),
+              label: const Text('Back to Class'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2463EB),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: onBack,
-                    icon: const Icon(Icons.home, size: 18),
-                    label: const Text('Home'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2463EB),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  String _getGrade(double percentage) {
-    if (percentage >= 90) return 'A';
-    if (percentage >= 80) return 'B';
-    if (percentage >= 70) return 'C';
-    if (percentage >= 60) return 'D';
-    return 'F';
   }
 
   Color _getGradeColor(String grade) {

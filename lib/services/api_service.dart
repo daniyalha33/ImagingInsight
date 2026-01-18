@@ -7,7 +7,7 @@ class ApiService {
   // For Android emulator: use 10.0.2.2
   // For real device: use your computer's local IP (e.g., 192.168.1.x)
   // For iOS simulator: use localhost
-  static const String baseUrl = 'http://192.168.100.36:5000/api';
+  static const String baseUrl = 'http://localhost:5000/api';
 
   // Authentication
   static Future<Map<String, dynamic>> login({

@@ -1,19 +1,18 @@
 // lib/screens/mobile/class_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
 
 class ClassDetailScreen extends StatefulWidget {
   final String classId;
   final VoidCallback onBack;
-  final Function(String, String) onOpenContent;
   final Function(String, String) onOpenAssessment;
 
   const ClassDetailScreen({
     Key? key,
     required this.classId,
     required this.onBack,
-    required this.onOpenContent,
     required this.onOpenAssessment,
   }) : super(key: key);
 
@@ -52,7 +51,6 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
     });
 
     try {
-      // Load class details, posts, files, and tests in parallel
       final results = await Future.wait([
         ApiService.getClassDetails(widget.classId),
         ApiService.getPosts(widget.classId),
@@ -62,22 +60,18 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
 
       if (!mounted) return;
 
-      // Process class details
       if (results[0]['success'] == true) {
         _classData = results[0]['data'];
       }
 
-      // Process posts
       if (results[1]['success'] == true) {
         _posts = results[1]['data'] ?? [];
       }
 
-      // Process files
       if (results[2]['success'] == true) {
         _files = results[2]['data'] ?? [];
       }
 
-      // Process tests
       if (results[3]['success'] == true) {
         _tests = results[3]['data'] ?? [];
       }
@@ -94,6 +88,86 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
       }
     }
   }
+
+Future<void> _handleFileDownload(String fileId, String fileName, String fileUrl) async {
+  try {
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: const [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text('Opening file...'),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor: const Color(0xFF2563EB),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+
+    // Increment download count
+    await ApiService.downloadFile(widget.classId, fileId);
+
+    // Parse URL
+    print('Attempting to open fileUrl: $fileUrl');
+    final uri = Uri.parse(fileUrl);
+    
+    // Try to launch with different modes based on platform
+    bool launched = false;
+    
+    // First try with external application
+    if (await canLaunchUrl(uri)) {
+      launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+    }
+    
+    // If that didn't work, try platformDefault
+    if (!launched) {
+      launched = await launchUrl(
+        uri,
+        mode: LaunchMode.platformDefault,
+      );
+    }
+
+    if (launched) {
+      // Refresh file list to update download count
+      _loadClassData();
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open file. Please install a PDF/video viewer app.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  } catch (e) {
+    print('Error opening file: $e');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+}
 
   String _formatDate(String dateStr) {
     try {
@@ -117,7 +191,6 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
       backgroundColor: Colors.transparent,
       body: Column(
         children: [
-          // Header
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -157,7 +230,6 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
             ),
           ),
 
-          // Tabs
           Container(
             color: Colors.white,
             child: TabBar(
@@ -178,7 +250,6 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
             ),
           ),
 
-          // Tab Content
           Expanded(
             child: _isLoading
                 ? const Center(
@@ -378,9 +449,12 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
         itemBuilder: (context, index) {
           final file = _files[index];
           final fileType = file['type'] ?? 'document';
+          final fileName = file['name'] ?? 'Unnamed File';
+          final fileUrl = file['url'] ?? '';
+          final fileId = file['_id'] ?? '';
 
           return InkWell(
-            onTap: () => widget.onOpenContent(file['_id'], fileType),
+            onTap: () => _handleFileDownload(fileId, fileName, fileUrl),
             borderRadius: BorderRadius.circular(12),
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -419,7 +493,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          file['name'] ?? 'Unnamed File',
+                          fileName,
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,

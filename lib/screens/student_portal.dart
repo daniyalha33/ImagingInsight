@@ -62,6 +62,9 @@ class _StudentPortalState extends State<StudentPortal> {
   
   // Track the last classId for better navigation
   String? _lastClassId;
+  
+  // Track test result data
+  Map<String, dynamic>? _lastTestResult;
 
   void _onTabChange(int index) {
     setState(() {
@@ -93,6 +96,11 @@ class _StudentPortalState extends State<StudentPortal> {
       // Save classId for better back navigation
       if (screen.type == ScreenType.classDetail) {
         _lastClassId = screen.params?['classId'];
+      }
+      
+      // Save test result for result screen
+      if (screen.type == ScreenType.mcqResult) {
+        _lastTestResult = screen.params?['testResult'];
       }
     });
   }
@@ -166,30 +174,25 @@ class _StudentPortalState extends State<StudentPortal> {
         return ClassDetailScreen(
           classId: _currentScreen.params?['classId'] ?? '',
           onBack: _navigateBack,
-          onOpenContent: (contentId, contentType) {
-            _navigateToScreen(
-              ScreenState(
-                ScreenType.contentViewer,
-                params: {
-                  'contentId': contentId,
-                  'contentType': contentType,
-                },
-              ),
-            );
-          },
           onOpenAssessment: (assessmentId, assessmentType) {
             if (assessmentType == 'mcq') {
               _navigateToScreen(
                 ScreenState(
                   ScreenType.assessmentMcq,
-                  params: {'assessmentId': assessmentId},
+                  params: {
+                    'testId': assessmentId,
+                    'assessmentType': assessmentType,
+                  },
                 ),
               );
             } else {
               _navigateToScreen(
                 ScreenState(
                   ScreenType.assessmentSegmentation,
-                  params: {'assessmentId': assessmentId},
+                  params: {
+                    'testId': assessmentId,
+                    'assessmentType': assessmentType,
+                  },
                 ),
               );
             }
@@ -202,12 +205,11 @@ class _StudentPortalState extends State<StudentPortal> {
           contentType: _currentScreen.params?['contentType'] ?? 'video',
           onBack: _navigateBack,
         );
+
       case ScreenType.assessmentMcq:
         return AssessmentScreen(
+          testId: _currentScreen.params?['testId'] ?? '',
           onBack: _navigateBack,
-          onComplete: () {
-            _navigateToScreen(ScreenState(ScreenType.mcqResult));
-          },
         );
 
       case ScreenType.assessmentSegmentation:
@@ -219,8 +221,14 @@ class _StudentPortalState extends State<StudentPortal> {
         );
 
       case ScreenType.mcqResult:
+        // Get test result from params or use cached result
+        final testResult = _currentScreen.params?['testResult'] as Map<String, dynamic>? 
+            ?? _lastTestResult 
+            ?? {};
+        
         return MCQResultScreen(
           onBack: _navigateBack,
+          testResult: testResult,
         );
 
       case ScreenType.segmentationResult:
@@ -246,6 +254,7 @@ class _StudentPortalState extends State<StudentPortal> {
             );
           },
         );
+
       case ScreenType.chat:
         return ChatScreen(
           teacherId: _currentScreen.params?['teacherId'] ?? '',
