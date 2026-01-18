@@ -59,10 +59,10 @@ class ScreenState {
 class _StudentPortalState extends State<StudentPortal> {
   int _selectedIndex = 0;
   ScreenState _currentScreen = ScreenState(ScreenType.classes);
-  
+
   // Track the last classId for better navigation
   String? _lastClassId;
-  
+
   // Track test result data
   Map<String, dynamic>? _lastTestResult;
 
@@ -92,12 +92,12 @@ class _StudentPortalState extends State<StudentPortal> {
   void _navigateToScreen(ScreenState screen) {
     setState(() {
       _currentScreen = screen;
-      
+
       // Save classId for better back navigation
       if (screen.type == ScreenType.classDetail) {
         _lastClassId = screen.params?['classId'];
       }
-      
+
       // Save test result for result screen
       if (screen.type == ScreenType.mcqResult) {
         _lastTestResult = screen.params?['testResult'];
@@ -113,7 +113,7 @@ class _StudentPortalState extends State<StudentPortal> {
         _navigateToScreen(ScreenState(ScreenType.classes));
         setState(() => _selectedIndex = 0);
         break;
-        
+
       case ScreenType.contentViewer:
       case ScreenType.assessmentMcq:
       case ScreenType.assessmentSegmentation:
@@ -122,24 +122,27 @@ class _StudentPortalState extends State<StudentPortal> {
         // Go back to class detail
         if (_lastClassId != null) {
           _navigateToScreen(
-            ScreenState(ScreenType.classDetail, params: {'classId': _lastClassId}),
+            ScreenState(
+              ScreenType.classDetail,
+              params: {'classId': _lastClassId},
+            ),
           );
         } else {
           _navigateToScreen(ScreenState(ScreenType.classes));
           setState(() => _selectedIndex = 0);
         }
         break;
-        
+
       case ScreenType.chat:
         _navigateToScreen(ScreenState(ScreenType.chatList));
         setState(() => _selectedIndex = 1);
         break;
-        
+
       case ScreenType.aiReport:
         _navigateToScreen(ScreenState(ScreenType.aiSegmentation));
         setState(() => _selectedIndex = 2);
         break;
-        
+
       default:
         // For main tabs, just switch to that tab
         break;
@@ -222,46 +225,40 @@ class _StudentPortalState extends State<StudentPortal> {
 
       case ScreenType.mcqResult:
         // Get test result from params or use cached result
-        final testResult = _currentScreen.params?['testResult'] as Map<String, dynamic>? 
-            ?? _lastTestResult 
-            ?? {};
-        
-        return MCQResultScreen(
-          onBack: _navigateBack,
-          testResult: testResult,
-        );
+        final testResult =
+            _currentScreen.params?['testResult'] as Map<String, dynamic>? ??
+            _lastTestResult ??
+            {};
+
+        return MCQResultScreen(onBack: _navigateBack, testResult: testResult);
 
       case ScreenType.segmentationResult:
-        return SegmentationResultScreen(
-          onBack: _navigateBack,
-        );
+        return SegmentationResultScreen(onBack: _navigateBack);
 
       case ScreenType.chatList:
         return ChatListScreen(
-          onSelectChat: (teacherId) {
-            final teacherNames = {
-              '1': 'Dr. Tahir Mustafa',
-              '2': 'Dr. Uzair Iqbal',
-            };
+          onSelectChat: (teacherId, teacherName, chatId) {
             _navigateToScreen(
               ScreenState(
                 ScreenType.chat,
                 params: {
                   'teacherId': teacherId,
-                  'teacherName': teacherNames[teacherId] ?? 'Teacher',
+                  'teacherName': teacherName,
+                  'chatId': chatId,
                 },
               ),
             );
           },
         );
 
+      // Update the case for chat:
       case ScreenType.chat:
         return ChatScreen(
           teacherId: _currentScreen.params?['teacherId'] ?? '',
           teacherName: _currentScreen.params?['teacherName'] ?? 'Teacher',
+          chatId: _currentScreen.params?['chatId'],
           onBack: _navigateBack,
         );
-
       case ScreenType.aiSegmentation:
         return AISegmentationScreen(
           onGenerateReport: (Map<String, dynamic> reportData) {
@@ -279,12 +276,10 @@ class _StudentPortalState extends State<StudentPortal> {
         );
 
       case ScreenType.aiReport:
-        final reportData = _currentScreen.params?['reportData'] as Map<String, dynamic>?;
-        
-        return AIReportScreen(
-          onBack: _navigateBack,
-          reportData: reportData,
-        );
+        final reportData =
+            _currentScreen.params?['reportData'] as Map<String, dynamic>?;
+
+        return AIReportScreen(onBack: _navigateBack, reportData: reportData);
 
       case ScreenType.performance:
         return PerformanceScreen(userName: widget.userName);
@@ -382,7 +377,10 @@ class _StudentPortalState extends State<StudentPortal> {
             children: [
               Icon(
                 icon,
-                color: isSelected ? const Color(0xFF2463EB) : const Color(0xFF64748B),
+                color:
+                    isSelected
+                        ? const Color(0xFF2463EB)
+                        : const Color(0xFF64748B),
                 size: isSelected ? 24 : 20,
               ),
               const SizedBox(height: 4),
@@ -390,7 +388,10 @@ class _StudentPortalState extends State<StudentPortal> {
                 label,
                 style: TextStyle(
                   fontSize: 11,
-                  color: isSelected ? const Color(0xFF2463EB) : const Color(0xFF64748B),
+                  color:
+                      isSelected
+                          ? const Color(0xFF2463EB)
+                          : const Color(0xFF64748B),
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 ),
                 textAlign: TextAlign.center,

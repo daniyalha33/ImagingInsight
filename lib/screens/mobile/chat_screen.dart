@@ -1,29 +1,58 @@
 // lib/screens/mobile/chat_screen.dart
 import 'package:flutter/material.dart';
+import 'dart:async';
+import '../../services/api_service.dart';
 
 class ChatMessage {
   final String id;
-  final String sender; // 'student' or 'teacher'
+  final String senderId;
+  final String senderName;
+  final String senderRole;
   final String text;
-  final String time;
+  final DateTime timestamp;
+  final bool isOwn;
 
   ChatMessage({
     required this.id,
-    required this.sender,
+    required this.senderId,
+    required this.senderName,
+    required this.senderRole,
     required this.text,
-    required this.time,
+    required this.timestamp,
+    required this.isOwn,
   });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      id: json['id'],
+      senderId: json['senderId'],
+      senderName: json['senderName'],
+      senderRole: json['senderRole'],
+      text: json['content'],
+      timestamp: DateTime.parse(json['timestamp']),
+      isOwn: json['isOwn'] ?? false,
+    );
+  }
+
+  String get formattedTime {
+    final hour = timestamp.hour > 12 ? timestamp.hour - 12 : timestamp.hour;
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    final period = timestamp.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
 }
 
 class ChatScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
+  final String? chatId;
   final VoidCallback onBack;
 
   const ChatScreen({
     Key? key,
     required this.teacherId,
     required this.teacherName,
+    this.chatId,
     required this.onBack,
   }) : super(key: key);
 
@@ -34,81 +63,187 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  
+  List<ChatMessage> _messages = [];
+  String? _currentChatId;
+  bool _isLoading = true;
+  bool _isSending = false;
+  String _errorMessage = '';
+  Timer? _pollingTimer;
 
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      id: '1',
-      sender: 'student',
-      text: 'Sir, I have a question about liver segmentation',
-      time: '10:30 AM',
-    ),
-    ChatMessage(
-      id: '2',
-      sender: 'teacher',
-      text: 'Yes, please go ahead',
-      time: '10:32 AM',
-    ),
-    ChatMessage(
-      id: '3',
-      sender: 'student',
-      text: 'How do I identify the boundary between liver and spleen?',
-      time: '10:33 AM',
-    ),
-    ChatMessage(
-      id: '4',
-      sender: 'teacher',
-      text: 'Look at the HU values and anatomical landmarks. I\'ll share some reference images.',
-      time: '10:35 AM',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initializeChat();
+    // Poll for new messages every 3 seconds
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (_currentChatId != null && !_isSending) {
+        _loadMessages(showLoading: false);
+      }
+    });
+  }
 
   @override
   void dispose() {
     _messageController.dispose();
     _scrollController.dispose();
+    _pollingTimer?.cancel();
     super.dispose();
   }
 
-  void _handleSend() {
-    if (_messageController.text.trim().isNotEmpty) {
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            sender: 'student',
-            text: _messageController.text.trim(),
-            time: _formatTime(DateTime.now()),
-          ),
-        );
-      });
-      _messageController.clear();
-      
-      // Scroll to bottom
-      Future.delayed(const Duration(milliseconds: 100), () {
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
+  Future<void> _initializeChat() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      // If we already have a chatId, use it. Otherwise, create a new chat
+      if (widget.chatId != null) {
+        _currentChatId = widget.chatId;
+      } else {
+        final response = await ApiService.startChat(widget.teacherId);
+        if (response['success'] == true) {
+          _currentChatId = response['chatId'];
+        } else {
+          setState(() {
+            _errorMessage = response['message'] ?? 'Failed to start chat';
+            _isLoading = false;
+          });
+          return;
         }
+      }
+
+      await _loadMessages();
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error initializing chat: ${e.toString()}';
+        _isLoading = false;
       });
     }
   }
 
-  String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour > 12 ? dateTime.hour - 12 : dateTime.hour;
-    final minute = dateTime.minute.toString().padLeft(2, '0');
-    final period = dateTime.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
+  Future<void> _loadMessages({bool showLoading = true}) async {
+    if (_currentChatId == null) return;
+
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = '';
+      });
+    }
+
+    try {
+      final response = await ApiService.getChatMessages(_currentChatId!);
+      
+      if (response['success'] == true) {
+        final chatData = response['chat'];
+        final List<dynamic> messagesJson = chatData['messages'] ?? [];
+        
+        setState(() {
+          _messages = messagesJson
+              .map((json) => ChatMessage.fromJson(json))
+              .toList();
+          _isLoading = false;
+        });
+
+        // Scroll to bottom after loading messages
+        if (showLoading) {
+          _scrollToBottom();
+        }
+      } else {
+        if (showLoading) {
+          setState(() {
+            _errorMessage = response['message'] ?? 'Failed to load messages';
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (showLoading) {
+        setState(() {
+          _errorMessage = 'Error loading messages: ${e.toString()}';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleSend() async {
+    if (_messageController.text.trim().isEmpty || _currentChatId == null) return;
+
+    final messageText = _messageController.text.trim();
+    _messageController.clear();
+
+    setState(() {
+      _isSending = true;
+    });
+
+    try {
+      final response = await ApiService.sendMessage(
+        chatId: _currentChatId!,
+        content: messageText,
+      );
+
+      if (response['success'] == true) {
+        // Add the new message to the list
+        final newMessage = ChatMessage.fromJson(response['message']);
+        setState(() {
+          _messages.add(newMessage);
+          _isSending = false;
+        });
+        
+        _scrollToBottom();
+      } else {
+        setState(() {
+          _isSending = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['message'] ?? 'Failed to send message'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        
+        // Restore the message
+        _messageController.text = messageText;
+      }
+    } catch (e) {
+      setState(() {
+        _isSending = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sending message: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      
+      // Restore the message
+      _messageController.text = messageText;
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   String _getInitials(String name) {
     final parts = name.split(' ');
     if (parts.length >= 2) {
-      return parts[0][0] + parts[1][0];
+      return parts[0][0].toUpperCase() + parts[1][0].toUpperCase();
     }
-    return name.substring(0, 1);
+    return name.substring(0, 1).toUpperCase();
   }
 
   @override
@@ -180,6 +315,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         ],
                       ),
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      color: const Color(0xFF2463EB),
+                      onPressed: () => _loadMessages(),
+                    ),
                   ],
                 ),
               ),
@@ -188,70 +328,132 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Messages
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                final isStudent = message.sender == 'student';
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    mainAxisAlignment: isStudent
-                        ? MainAxisAlignment.end
-                        : MainAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: Container(
-                          constraints: BoxConstraints(
-                            maxWidth: MediaQuery.of(context).size.width * 0.75,
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isStudent
-                                ? const Color(0xFF2463EB)
-                                : Colors.white,
-                            border: isStudent
-                                ? null
-                                : Border.all(color: Colors.blue.shade100),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                message.text,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: isStudent
-                                      ? Colors.white
-                                      : const Color(0xFF1E40AF),
-                                ),
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF2463EB),
+                    ),
+                  )
+                : _errorMessage.isNotEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 48,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _errorMessage,
+                              style: const TextStyle(color: Colors.red),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _initializeChat,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2463EB),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                message.time,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isStudent
-                                      ? const Color(0xFFBFDBFE)
-                                      : const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
+                              child: const Text('Retry'),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+                      )
+                    : _messages.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 64,
+                                  color: Colors.blue.shade200,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No messages yet',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.blue.shade300,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Start the conversation!',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.blue.shade200,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _messages.length,
+                            itemBuilder: (context, index) {
+                              final message = _messages[index];
+                              final isStudent = message.senderRole == 'student';
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  mainAxisAlignment: message.isOwn
+                                      ? MainAxisAlignment.end
+                                      : MainAxisAlignment.start,
+                                  children: [
+                                    Flexible(
+                                      child: Container(
+                                        constraints: BoxConstraints(
+                                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 10,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: message.isOwn
+                                              ? const Color(0xFF2463EB)
+                                              : Colors.white,
+                                          border: message.isOwn
+                                              ? null
+                                              : Border.all(color: Colors.blue.shade100),
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              message.text,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: message.isOwn
+                                                    ? Colors.white
+                                                    : const Color(0xFF1E40AF),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              message.formattedTime,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: message.isOwn
+                                                    ? const Color(0xFFBFDBFE)
+                                                    : const Color(0xFF64748B),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
           ),
 
           // Input
@@ -271,6 +473,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _messageController,
+                        enabled: !_isSending,
                         decoration: InputDecoration(
                           hintText: 'Type a message...',
                           hintStyle: const TextStyle(
@@ -309,19 +512,29 @@ class _ChatScreenState extends State<ChatScreen> {
                     Container(
                       width: 40,
                       height: 40,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2463EB),
+                      decoration: BoxDecoration(
+                        color: _isSending
+                            ? const Color(0xFF94A3B8)
+                            : const Color(0xFF2463EB),
                         shape: BoxShape.circle,
                       ),
-                      child: IconButton(
-                        onPressed: _handleSend,
-                        icon: const Icon(
-                          Icons.send,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                        padding: EdgeInsets.zero,
-                      ),
+                      child: _isSending
+                          ? const Padding(
+                              padding: EdgeInsets.all(10),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : IconButton(
+                              onPressed: _handleSend,
+                              icon: const Icon(
+                                Icons.send,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              padding: EdgeInsets.zero,
+                            ),
                     ),
                   ],
                 ),
