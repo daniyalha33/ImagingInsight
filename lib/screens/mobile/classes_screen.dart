@@ -212,6 +212,40 @@ class _ClassesScreenState extends State<ClassesScreen> {
             ),
           ),
 
+          // Always show Join a Class button
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: SizedBox(
+              width: 200,
+              height: 48,
+              child: ElevatedButton(
+                onPressed: widget.onJoinClass,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2563EB),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.add, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Join a Class',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
           // Content
           Expanded(
             child: _buildContent(),
@@ -299,36 +333,6 @@ class _ClassesScreenState extends State<ClassesScreen> {
               style: const TextStyle(
                 fontSize: 14,
                 color: Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: 200,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: widget.onJoinClass,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.add, size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Join a Class',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ],

@@ -5,9 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Use your laptop's local IP address for real device testing
-  static const String baseUrl = 'http://192.168.100.36:5000/api';
+  static const String baseUrl = 'http://localhost:5000/api';
 
-  // Authentication
+  // Authentications
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
@@ -268,6 +268,130 @@ class ApiService {
       };
     }
   }
+
+  // Performance & Leaderboard APIs
+  static Future<Map<String, dynamic>> getLeaderboard(String classId) async {
+    try {
+      final token = await getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/classes/$classId/leaderboard'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return json.decode(response.body);
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+  // User Profile APIs
+   static Future<Map<String, dynamic>> getUserProfile() async {
+    try {
+      final token = await getToken();
+      final response = await http.get(
+        Uri.parse('$baseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return json.decode(response.body);
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateUserProfile({
+    String? name,
+    String? profileImage,
+  }) async {
+    try {
+      final token = await getToken();
+      final body = <String, dynamic>{};
+      if (name != null) body['name'] = name;
+      if (profileImage != null) body['profileImage'] = profileImage;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+
+      return json.decode(response.body);
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  // Status APIs
+  static Future<Map<String, dynamic>> updateUserStatus({
+    String? message,
+    String? availability,
+    String? customEmoji,
+    int? expiresIn,
+  }) async {
+    try {
+      final token = await getToken();
+      final body = <String, dynamic>{};
+      if (message != null) body['message'] = message;
+      if (availability != null) body['availability'] = availability;
+      if (customEmoji != null) body['customEmoji'] = customEmoji;
+      if (expiresIn != null) body['expiresIn'] = expiresIn;
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/user/status'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      );
+
+      return json.decode(response.body);
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> clearUserStatus() async {
+    try {
+      final token = await getToken();
+      final response = await http.delete(
+        Uri.parse('$baseUrl/user/status'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      return json.decode(response.body);
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+
 
   // Chat APIs
   static Future<Map<String, dynamic>> getChatList() async {

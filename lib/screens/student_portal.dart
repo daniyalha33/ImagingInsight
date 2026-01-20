@@ -9,7 +9,6 @@ import 'mobile/segmentation_result_screen.dart';
 import 'mobile/mcq_result_screen.dart';
 import 'mobile/profile_screen.dart';
 import 'mobile/chat_screen.dart';
-import 'mobile/performance_screen.dart';
 import 'mobile/chat_list_screen.dart';
 import 'mobile/content_viewer_screen.dart';
 import 'mobile/join_class_screen.dart';
@@ -45,7 +44,6 @@ enum ScreenType {
   chat,
   aiSegmentation,
   aiReport,
-  performance,
   profile,
 }
 
@@ -80,9 +78,6 @@ class _StudentPortalState extends State<StudentPortal> {
           _currentScreen = ScreenState(ScreenType.aiSegmentation);
           break;
         case 3:
-          _currentScreen = ScreenState(ScreenType.performance);
-          break;
-        case 4:
           _currentScreen = ScreenState(ScreenType.profile);
           break;
       }
@@ -251,7 +246,6 @@ class _StudentPortalState extends State<StudentPortal> {
           },
         );
 
-      // Update the case for chat:
       case ScreenType.chat:
         return ChatScreen(
           teacherId: _currentScreen.params?['teacherId'] ?? '',
@@ -259,6 +253,7 @@ class _StudentPortalState extends State<StudentPortal> {
           chatId: _currentScreen.params?['chatId'],
           onBack: _navigateBack,
         );
+
       case ScreenType.aiSegmentation:
         return AISegmentationScreen(
           onGenerateReport: (Map<String, dynamic> reportData) {
@@ -281,15 +276,9 @@ class _StudentPortalState extends State<StudentPortal> {
 
         return AIReportScreen(onBack: _navigateBack, reportData: reportData);
 
-      case ScreenType.performance:
-        return PerformanceScreen(userName: widget.userName);
-
       case ScreenType.profile:
-        return ProfileScreen(
-          userName: widget.userName,
-          userEmail: widget.userEmail,
-          onLogout: widget.onLogout,
-        );
+        // ProfileScreen now fetches user data from backend
+        return ProfileScreen(onLogout: widget.onLogout);
     }
   }
 
@@ -341,8 +330,7 @@ class _StudentPortalState extends State<StudentPortal> {
                   _buildNavItem(0, Icons.book_outlined, 'Classes'),
                   _buildNavItem(1, Icons.chat_bubble_outline, 'Chat'),
                   _buildNavItem(2, Icons.scanner_outlined, 'AI Scan'),
-                  _buildNavItem(3, Icons.emoji_events_outlined, 'Performance'),
-                  _buildNavItem(4, Icons.person_outline, 'Profile'),
+                  _buildNavItem(3, Icons.person_outline, 'Profile'),
                 ],
               ),
             ),
@@ -356,7 +344,6 @@ class _StudentPortalState extends State<StudentPortal> {
     return _currentScreen.type == ScreenType.classes ||
         _currentScreen.type == ScreenType.chatList ||
         _currentScreen.type == ScreenType.aiSegmentation ||
-        _currentScreen.type == ScreenType.performance ||
         _currentScreen.type == ScreenType.profile;
   }
 
