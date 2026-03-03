@@ -104,7 +104,7 @@ class _AppNavigatorState extends State<AppNavigator> {
   Future<void> _checkAuthStatus() async {
     // Check if user is already logged in
     final isLoggedIn = await ApiService.isLoggedIn();
-    
+
     if (isLoggedIn) {
       // Get saved user data
       final user = await ApiService.getUserData();
@@ -113,6 +113,7 @@ class _AppNavigatorState extends State<AppNavigator> {
           _userData = UserData.fromJson(user);
           _currentScreen = AppScreen.studentPortal;
         });
+        ApiService.socket.connect(); // ✅ Connect socket if already logged in
         return;
       }
     }
@@ -125,15 +126,13 @@ class _AppNavigatorState extends State<AppNavigator> {
   }
 
   void _handleSignUpSuccess(Map<String, dynamic> result) {
-    // Extract user data from registration result
     if (result['success'] == true && result['user'] != null) {
       setState(() {
         _userData = UserData.fromJson(result['user']);
         _currentScreen = AppScreen.studentPortal;
       });
+      ApiService.socket.connect(); // ✅ Connect socket on signup success
     } else {
-      // If registration failed, stay on signup screen
-      // Error message is already shown by the signup screen
       setState(() => _currentScreen = AppScreen.studentSignup);
     }
   }
@@ -143,12 +142,16 @@ class _AppNavigatorState extends State<AppNavigator> {
       _userData = UserData.fromJson(user);
       _currentScreen = AppScreen.studentPortal;
     });
+    ApiService.socket.connect(); // ✅ Connect socket on login success
   }
 
   Future<void> _handleLogout() async {
+    // Disconnect socket before clearing session
+    ApiService.socket.disconnect(); // ✅ Disconnect socket on logout
+
     // Clear session data
     await ApiService.logout();
-    
+
     setState(() {
       _userData = null;
       _currentScreen = AppScreen.studentLogin;
@@ -184,19 +187,23 @@ class _AppNavigatorState extends State<AppNavigator> {
       case AppScreen.studentLogin:
         return StudentLoginScreen(
           onLoginSuccess: _handleLoginSuccess,
-          onNavigateToSignUp: () => setState(() => _currentScreen = AppScreen.studentSignup),
-          onNavigateToPasswordRecovery: () => setState(() => _currentScreen = AppScreen.passwordRecovery),
+          onNavigateToSignUp: () =>
+              setState(() => _currentScreen = AppScreen.studentSignup),
+          onNavigateToPasswordRecovery: () =>
+              setState(() => _currentScreen = AppScreen.passwordRecovery),
         );
 
       case AppScreen.studentSignup:
         return StudentSignUpScreen(
-          onNavigateToLogin: () => setState(() => _currentScreen = AppScreen.studentLogin),
+          onNavigateToLogin: () =>
+              setState(() => _currentScreen = AppScreen.studentLogin),
           onSignUpSuccess: _handleSignUpSuccess,
         );
 
       case AppScreen.passwordRecovery:
         return PasswordRecoveryScreen(
-          onBackToLogin: () => setState(() => _currentScreen = AppScreen.studentLogin),
+          onBackToLogin: () =>
+              setState(() => _currentScreen = AppScreen.studentLogin),
         );
 
       case AppScreen.studentPortal:

@@ -2,10 +2,14 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'websocket_service.dart';
 
 class ApiService {
-  // Use your laptop's local IP address for real device testing
-  static const String baseUrl = 'http://localhost:5000/api';
+  static const String baseUrl = 'http://10.113.82.41:5000/api';
+
+  // Singleton socket instance
+  static final WebSocketService _socketInstance = WebSocketService();
+  static WebSocketService get socket => _socketInstance;
 
   // Authentications
   static Future<Map<String, dynamic>> login({
@@ -269,7 +273,7 @@ class ApiService {
     }
   }
 
-  // Performance & Leaderboard APIs
+  // Performance & Leaderboard
   static Future<Map<String, dynamic>> getLeaderboard(String classId) async {
     try {
       final token = await getToken();
@@ -289,8 +293,9 @@ class ApiService {
       };
     }
   }
-  // User Profile APIs
-   static Future<Map<String, dynamic>> getUserProfile() async {
+
+  // User Profile
+  static Future<Map<String, dynamic>> getUserProfile() async {
     try {
       final token = await getToken();
       final response = await http.get(
@@ -390,8 +395,6 @@ class ApiService {
       };
     }
   }
-
-
 
   // Chat APIs
   static Future<Map<String, dynamic>> getChatList() async {
@@ -507,7 +510,8 @@ class ApiService {
     try {
       final token = await getToken();
       final response = await http.get(
-        Uri.parse('$baseUrl/notifications?page=$page&limit=$limit&unreadOnly=$unreadOnly'),
+        Uri.parse(
+            '$baseUrl/notifications?page=$page&limit=$limit&unreadOnly=$unreadOnly'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -543,7 +547,8 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> markNotificationAsRead(String notificationId) async {
+  static Future<Map<String, dynamic>> markNotificationAsRead(
+      String notificationId) async {
     try {
       final token = await getToken();
       final response = await http.put(
@@ -583,7 +588,8 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> deleteNotification(String notificationId) async {
+  static Future<Map<String, dynamic>> deleteNotification(
+      String notificationId) async {
     try {
       final token = await getToken();
       final response = await http.delete(

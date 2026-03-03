@@ -11,23 +11,30 @@ class WebSocketService {
   IO.Socket? _socket;
   bool _isConnected = false;
 
-  // Callbacks for different events
+  // Track active rooms so we can re-join after reconnection
+  final Set<String> _activeClassRooms = {};
+
   final Map<String, List<Function>> _eventListeners = {};
 
   bool get isConnected => _isConnected;
 
   Future<void> connect() async {
-    if (_isConnected) return;
-
-    final token = await ApiService.getToken();
-    if (token == null) {
-      debugPrint('WebSocket: No token available');
+    if (_isConnected) {
+      debugPrint('🔵 Socket already connected, skipping');
       return;
     }
 
+    final token = await ApiService.getToken();
+    if (token == null) {
+      debugPrint('🔴 Socket: No token available - cannot connect');
+      return;
+    }    // Use the same base URL as ApiService (without /api)
+    const String socketUrl = 'http://10.113.82.41:5000';
+    debugPrint('🟡 Socket: Attempting to connect to $socketUrl ...');
+
     try {
       _socket = IO.io(
-        'http://localhost:5000', // Change to your server URL
+        socketUrl,
         IO.OptionBuilder()
             .setTransports(['websocket'])
             .disableAutoConnect()
@@ -36,22 +43,47 @@ class WebSocketService {
       );
 
       _socket!.connect();
+      debugPrint('🟡 Socket: connect() called, waiting for response...');
 
       _socket!.onConnect((_) {
-        debugPrint('WebSocket: Connected');
+        debugPrint('🟢 Socket: Connected successfully! ✅');
         _isConnected = true;
+
+        // Re-join all active class rooms after reconnection
+        if (_activeClassRooms.isNotEmpty) {
+          for (final classId in _activeClassRooms) {
+            _socket!.emit('class:join', classId);
+            debugPrint('🔄 Socket: Re-joined class room after reconnect: $classId');
+          }
+        }
+
         _notifyListeners('connection:status', {'connected': true});
       });
 
       _socket!.onDisconnect((_) {
-        debugPrint('WebSocket: Disconnected');
+        debugPrint('🔴 Socket: Disconnected');
         _isConnected = false;
         _notifyListeners('connection:status', {'connected': false});
       });
 
       _socket!.onConnectError((data) {
-        debugPrint('WebSocket: Connection Error: $data');
+        debugPrint('🔴 Socket: Connection Error: $data');
         _isConnected = false;
+      });
+
+      _socket!.onError((data) {
+        debugPrint('🔴 Socket: Error: $data');
+      });
+
+      // Live class events
+      _socket!.on('liveClassStarted', (data) {
+        debugPrint('🔥 Socket: liveClassStarted received: $data');
+        _notifyListeners('liveClassStarted', data);
+      });
+
+      _socket!.on('liveClassEnded', (data) {
+        debugPrint('🔥 Socket: liveClassEnded received: $data');
+        _notifyListeners('liveClassEnded', data);
       });
 
       // Chat events
@@ -101,9 +133,39 @@ class WebSocketService {
         debugPrint('WebSocket: User offline: $data');
         _notifyListeners('user:offline', data);
       });
+
     } catch (e) {
-      debugPrint('WebSocket: Error connecting: $e');
+      debugPrint('🔴 Socket: Exception during connect: $e');
       _isConnected = false;
+    }
+  }
+  void joinClass(String classId) {
+    // Backend expects room name with "class_" prefix
+    final roomName = 'class_$classId';
+    
+    // Always track the room regardless of connection state
+    _activeClassRooms.add(roomName);
+
+    if (_isConnected && _socket != null) {
+      _socket!.emit('class:join', roomName);
+      debugPrint('📌 Socket: Joined class room: $roomName');
+    } else {
+      // Not connected yet — room is saved in _activeClassRooms
+      // and will be joined automatically in onConnect
+      debugPrint('⚠️ Socket: Not connected yet — class $roomName queued for join on reconnect');
+    }
+  }
+
+  void leaveClass(String classId) {
+    // Backend expects room name with "class_" prefix
+    final roomName = 'class_$classId';
+    
+    // Remove from tracking so we don't re-join after reconnection
+    _activeClassRooms.remove(roomName);
+
+    if (_isConnected && _socket != null) {
+      _socket!.emit('class:leave', roomName);
+      debugPrint('📌 Socket: Left class room: $roomName');
     }
   }
 
@@ -113,11 +175,10 @@ class WebSocketService {
       _socket!.dispose();
       _socket = null;
       _isConnected = false;
-      debugPrint('WebSocket: Manually disconnected');
+      debugPrint('🔴 Socket: Manually disconnected');
     }
   }
 
-  // Join a chat room
   void joinChat(String chatId) {
     if (_isConnected && _socket != null) {
       _socket!.emit('chat:join', chatId);
@@ -125,7 +186,6 @@ class WebSocketService {
     }
   }
 
-  // Leave a chat room
   void leaveChat(String chatId) {
     if (_isConnected && _socket != null) {
       _socket!.emit('chat:leave', chatId);
@@ -133,21 +193,18 @@ class WebSocketService {
     }
   }
 
-  // Send typing indicator
   void sendTypingIndicator(String chatId, bool isTyping) {
     if (_isConnected && _socket != null) {
       _socket!.emit('chat:typing', {'chatId': chatId, 'isTyping': isTyping});
     }
   }
 
-  // Mark chat as read
   void markChatAsRead(String chatId) {
     if (_isConnected && _socket != null) {
       _socket!.emit('chat:read', {'chatId': chatId});
     }
   }
 
-  // Register event listener
   void on(String event, Function callback) {
     if (!_eventListeners.containsKey(event)) {
       _eventListeners[event] = [];
@@ -155,19 +212,16 @@ class WebSocketService {
     _eventListeners[event]!.add(callback);
   }
 
-  // Remove event listener
   void off(String event, Function callback) {
     if (_eventListeners.containsKey(event)) {
       _eventListeners[event]!.remove(callback);
     }
   }
 
-  // Remove all listeners for an event
   void removeAllListeners(String event) {
     _eventListeners.remove(event);
   }
 
-  // Notify all listeners for an event
   void _notifyListeners(String event, dynamic data) {
     if (_eventListeners.containsKey(event)) {
       for (var callback in _eventListeners[event]!) {
@@ -180,7 +234,6 @@ class WebSocketService {
     }
   }
 
-  // Reconnect
   Future<void> reconnect() async {
     disconnect();
     await Future.delayed(const Duration(seconds: 1));

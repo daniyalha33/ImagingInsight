@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
+import './live_class_screen.dart';
 
 class ClassDetailScreen extends StatefulWidget {
   final String classId;
   final VoidCallback onBack;
   final Function(String, String) onOpenAssessment;
+
+  // ✅ REMOVED _onConnectionStatus from here
 
   const ClassDetailScreen({
     Key? key,
@@ -29,19 +32,119 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
   List<dynamic> _tests = [];
   bool _isLoading = true;
   String? _error;
-
-  @override
+  late final Function _onLiveClassStarted;
+  late final Function _onLiveClassEnded;
+  late final Function _onConnectionStatus; // ✅ MOVED HERE
+   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _loadClassData();
+
+   _onLiveClassStarted = (data) {
+  debugPrint('liveClassStarted received ✅: $data'); // ADD THIS
+  if (mounted && data['classId'] == widget.classId) {
+    _showLiveClassBanner(data);
+  }
+};
+
+    _onLiveClassEnded = (data) {
+      if (mounted && data['classId'] == widget.classId) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Live class has ended'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    };
+
+    ApiService.socket.on('liveClassStarted', _onLiveClassStarted);
+    ApiService.socket.on('liveClassEnded', _onLiveClassEnded);
+
+   if (ApiService.socket.isConnected) {
+  debugPrint('Socket already connected, joining class ${widget.classId}');
+  ApiService.socket.joinClass(widget.classId);
+} else {
+  debugPrint('Socket NOT connected yet, waiting...');
+  _onConnectionStatus = (data) {
+    if (data['connected'] == true) {
+      debugPrint('Socket connected now, joining class ${widget.classId}');
+      ApiService.socket.joinClass(widget.classId);
+      ApiService.socket.off('connection:status', _onConnectionStatus);
+    }
+  };
+  ApiService.socket.on('connection:status', _onConnectionStatus);
+}
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    ApiService.socket.leaveClass(widget.classId);
+    ApiService.socket.off('liveClassStarted', _onLiveClassStarted);
+    ApiService.socket.off('liveClassEnded', _onLiveClassEnded);
     super.dispose();
   }
+  
+  void _showLiveClassBanner(Map<String, dynamic> data) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      title: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text('Live Class Started!'),
+        ],
+      ),
+      content: Text(
+        '${data['teacherName']} has started a live class. Join now?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Later'),
+        ),
+        ElevatedButton(
+          onPressed: () async {                              // ← async
+            Navigator.pop(ctx);
+            final token = await ApiService.getToken();      // ← await
+            final userData = await ApiService.getUserData(); // ← await
+            final studentName = userData?['name'] ?? 'Student';
+            if (!mounted) return;
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => LiveClassScreen(
+                  classId: widget.classId,
+                  studentName: studentName,
+                  authToken: token ?? '',
+                  apiBaseUrl: ApiService.baseUrl,
+                ),
+              ),
+            );
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+          ),
+          child: const Text(
+            'Join Now',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Future<void> _loadClassData() async {
     setState(() {
