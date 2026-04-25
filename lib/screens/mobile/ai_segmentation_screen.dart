@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 
 class AISegmentationScreen extends StatefulWidget {
@@ -48,12 +47,10 @@ class _AISegmentationScreenState extends State<AISegmentationScreen> {
   Map<String, List<int>>? _sliceDimensions;
 
   // Segmentation slices
-  List<String> _segmentationAxialSlices = [];
-  List<String> _segmentationCoronalSlices = [];
+  List<String> _segmentationAxialSlices = [];  List<String> _segmentationCoronalSlices = [];
   List<String> _segmentationSagittalSlices = [];
 
   // Segmentation data
-  List<String> _segmentationSlices = [];
   Map<String, dynamic>? _segmentationAnalysis;
   int _organsFound = 0;
 
@@ -314,15 +311,14 @@ class _AISegmentationScreenState extends State<AISegmentationScreen> {
   // ── CT / MRI viewer ─────────────────────────────────────────────────────
 
   Widget _buildCTViewer() {
-    if (_isProcessing) return _buildProcessingIndicator();
-
-    return SingleChildScrollView(
+    if (_isProcessing) return _buildProcessingIndicator();    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           _buildFileInfo(),
           const SizedBox(height: 16),
           if (_segmentationComplete) _buildSegmentationStats(),
+          if (_segmentationComplete) _buildColorLegend(),
           if (_segmentationComplete) const SizedBox(height: 16),
           _buildViewTabs(),
           const SizedBox(height: 16),
@@ -482,12 +478,151 @@ class _AISegmentationScreenState extends State<AISegmentationScreen> {
                   key.toString().replaceAll('_', ' '),
                   style: TextStyle(fontSize: 11, color: Colors.green.shade900),
                 ),
+              );            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColorLegend() {
+    if (_segmentationAnalysis == null || _segmentationAnalysis!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade100),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.palette, size: 18, color: Colors.blue.shade700),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Segmentation Color Legend',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E40AF),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Colors shown in the segmentation overlay',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 12),
+          const Divider(),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _segmentationAnalysis!.entries.map((entry) {
+              final String key = entry.key;
+              final dynamic value = entry.value;
+
+              // Backend always sends 'color' field in organ/structure data
+              // For report data: organ_reports have 'color' hex string
+              // For raw segmentation: use key to look up
+              String? hexColor;
+              String displayName = key.replaceAll('_', ' ');
+
+              if (value is Map) {
+                // From generate-report response: { color: '#EF4444', name: ..., status: ... }
+                hexColor = value['color']?.toString();
+                displayName = (value['organ_name'] ??
+                               value['structure_name'] ??
+                               value['name'] ??
+                               key).toString().replaceAll('_', ' ');
+              }
+
+              // For UNet3D raw analysis (no color field), use index-based colors
+              // matching backend's organ_colors numpy array order
+              final Map<String, String> unetColors = {
+                'spleen':               '#FF0000',
+                'right_kidney':         '#00FF00',
+                'left_kidney':          '#00FFFF',
+                'gallbladder':          '#FFFF00',
+                'esophagus':            '#FF00FF',
+                'liver':                '#800000',
+                'stomach':              '#008000',
+                'aorta':                '#0000FF',
+                'inferior_vena_cava':   '#808000',
+                'portal_vein_splenic':  '#800080',
+                'pancreas':             '#008080',
+                'right_adrenal':        '#FF8000',
+                'left_adrenal':         '#FF0080',
+              };
+
+              hexColor ??= unetColors[key] ?? '#6B7280';
+
+              final Color color = _hexToColor(hexColor);
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: color.withOpacity(0.6)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 14, height: 14,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.black.withOpacity(0.1),
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF1E3A5F),
+                      ),
+                    ),
+                  ],
+                ),
               );
             }).toList(),
           ),
         ],
       ),
     );
+  }
+
+  // Helper: convert hex string like '#EF4444' to Flutter Color
+  Color _hexToColor(String hex) {
+    try {
+      hex = hex.replaceAll('#', '');
+      if (hex.length == 6) hex = 'FF$hex';
+      return Color(int.parse(hex, radix: 16));
+    } catch (_) {
+      return const Color(0xFF6B7280);
+    }
   }
 
   Widget _buildFileInfo() {
