@@ -1,12 +1,14 @@
 // lib/screens/mobile/classes_screen.dart
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
+import '../../widgets/avatar_widget.dart';
 
 class ClassData {
   final String id;
   final String name;
   final String teacher;
   final String teacherAvatar;
+  final String? teacherProfileImage;
   final String code;
 
   ClassData({
@@ -14,18 +16,21 @@ class ClassData {
     required this.name,
     required this.teacher,
     required this.teacherAvatar,
+    this.teacherProfileImage,
     required this.code,
   });
 
   factory ClassData.fromJson(Map<String, dynamic> json) {
     final teacher = json['teacher'] as Map<String, dynamic>?;
     final teacherName = teacher?['name'] ?? 'Unknown Teacher';
+    final profileImage = teacher?['profileImage'] as String?;
     
     return ClassData(
       id: json['_id'] ?? json['id'] ?? '',
       name: json['name'] ?? 'Unnamed Class',
       teacher: teacherName,
       teacherAvatar: _getInitials(teacherName),
+      teacherProfileImage: profileImage,
       code: json['code'] ?? '',
     );
   }
@@ -416,17 +421,10 @@ class _ClassesScreenState extends State<ClassesScreen> {
         child: Row(
           children: [
             // Avatar
-            CircleAvatar(
+            AvatarWidget(
+              initials: classData.teacherAvatar,
+              image: classData.teacherProfileImage,
               radius: 24,
-              backgroundColor: const Color(0xFF2563EB),
-              child: Text(
-                classData.teacherAvatar,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
             ),
             const SizedBox(width: 12),
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/api_service.dart';
+import '../../widgets/avatar_widget.dart';
 import './live_class_screen.dart';
 
 class ClassDetailScreen extends StatefulWidget {
@@ -31,20 +32,33 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
   List<dynamic> _files = [];
   List<dynamic> _tests = [];
   bool _isLoading = true;
-  String? _error;
-  late final Function _onLiveClassStarted;
+  String? _error;  late final Function _onLiveClassStarted;
   late final Function _onLiveClassEnded;
-  late final Function _onConnectionStatus; // ✅ MOVED HERE
+  Function? _onConnectionStatus; // Nullable — only assigned if socket not yet connected
    @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _loadClassData();
-
-   _onLiveClassStarted = (data) {
-  debugPrint('liveClassStarted received ✅: $data'); // ADD THIS
-  if (mounted && data['classId'] == widget.classId) {
-    _showLiveClassBanner(data);
+    _loadClassData();   _onLiveClassStarted = (data) {
+  debugPrint('🔥 liveClassStarted received in ClassDetail ✅');
+  debugPrint('   data type: ${data.runtimeType}');
+  debugPrint('   data: $data');
+  debugPrint('   widget.classId: ${widget.classId}');
+  if (data is Map) {
+    debugPrint('   data[classId]: ${data['classId']}');
+    debugPrint('   data[class]: ${data['class']}');
+  }
+  if (mounted) {
+    // Try to match classId from data — server might use different keys
+    final incomingClassId = data is Map
+        ? (data['classId'] ?? data['class'] ?? '').toString()
+        : '';
+    if (incomingClassId == widget.classId || incomingClassId.isEmpty) {
+      // If classId matches OR server didn't send one (room-scoped = already filtered)
+      _showLiveClassBanner(data is Map<String, dynamic> ? data : <String, dynamic>{});
+    } else {
+      debugPrint('   ⚠️ classId mismatch: incoming=$incomingClassId vs widget=${widget.classId}');
+    }
   }
 };
 
@@ -60,30 +74,32 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
     };
 
     ApiService.socket.on('liveClassStarted', _onLiveClassStarted);
-    ApiService.socket.on('liveClassEnded', _onLiveClassEnded);
-
-   if (ApiService.socket.isConnected) {
+    ApiService.socket.on('liveClassEnded', _onLiveClassEnded);   if (ApiService.socket.isConnected) {
   debugPrint('Socket already connected, joining class ${widget.classId}');
   ApiService.socket.joinClass(widget.classId);
+  ApiService.socket.printDebugInfo();
 } else {
   debugPrint('Socket NOT connected yet, waiting...');
   _onConnectionStatus = (data) {
     if (data['connected'] == true) {
       debugPrint('Socket connected now, joining class ${widget.classId}');
       ApiService.socket.joinClass(widget.classId);
-      ApiService.socket.off('connection:status', _onConnectionStatus);
+      ApiService.socket.printDebugInfo();
+      ApiService.socket.off('connection:status', _onConnectionStatus!);
     }
   };
-  ApiService.socket.on('connection:status', _onConnectionStatus);
+  ApiService.socket.on('connection:status', _onConnectionStatus!);
 }
   }
-
   @override
   void dispose() {
     _tabController.dispose();
     ApiService.socket.leaveClass(widget.classId);
     ApiService.socket.off('liveClassStarted', _onLiveClassStarted);
     ApiService.socket.off('liveClassEnded', _onLiveClassEnded);
+    if (_onConnectionStatus != null) {
+      ApiService.socket.off('connection:status', _onConnectionStatus!);
+    }
     super.dispose();
   }
   
@@ -147,47 +163,65 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
 }
 
   Future<void> _loadClassData() async {
+  setState(() {
+    _isLoading = true;
+    _error = null;
+  });
+
+  try {
+    final results = await Future.wait([
+      ApiService.getClassDetails(widget.classId),
+      ApiService.getPosts(widget.classId),
+      ApiService.getFiles(widget.classId),
+      ApiService.getTests(widget.classId),
+      ApiService.getSegmentationTests(widget.classId),
+    ]);
+
+    if (!mounted) return;
+
+    // ✅ Wrap ALL data assignments inside a single setState
     setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      final results = await Future.wait([
-        ApiService.getClassDetails(widget.classId),
-        ApiService.getPosts(widget.classId),
-        ApiService.getFiles(widget.classId),
-        ApiService.getTests(widget.classId),
-      ]);
-
-      if (!mounted) return;
-
-      if (results[0]['success'] == true) {
-        _classData = results[0]['data'];
-      }
+      if (results[0]['success'] == true) _classData = results[0]['data'];
       if (results[1]['success'] == true) {
-        _posts = results[1]['data'] ?? [];
+        final rawPosts = (results[1]['data'] as List<dynamic>?) ?? [];
+        _posts = rawPosts.map((p) {
+          final Map<String, dynamic> postMap = Map<String, dynamic>.from(p as Map<String, dynamic>);
+          // Ensure comments array exists so UI can preview comments
+          if (postMap['comments'] == null || postMap['comments'] is! List) {
+            postMap['comments'] = <dynamic>[];
+          }
+          postMap['commentsCount'] = postMap['commentsCount'] ?? (postMap['comments'] as List).length;
+          postMap['likesCount'] = postMap['likesCount'] ?? (postMap['likes'] is List ? (postMap['likes'] as List).length : 0);
+          postMap['likedByCurrentUser'] = postMap['likedByCurrentUser'] ?? postMap['liked'] ?? false;
+          return postMap;
+        }).toList();
       }
-      if (results[2]['success'] == true) {
-        _files = results[2]['data'] ?? [];
-      }
-      if (results[3]['success'] == true) {
-        _tests = results[3]['data'] ?? [];
-      }
+      if (results[2]['success'] == true) _files = results[2]['data'] ?? [];
 
+      final mcqTests = results[3]['success'] == true
+          ? (results[3]['data'] as List<dynamic>? ?? [])
+              .map((t) => {...(t as Map<String, dynamic>), 'type': 'mcq'})
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final segTests = results[4]['success'] == true
+          ? (results[4]['data'] as List<dynamic>? ?? [])
+              .map((t) => {...(t as Map<String, dynamic>), 'type': 'segmentation'})
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      _tests = [...mcqTests, ...segTests];
+      _isLoading = false; // ✅ THIS was missing
+    });
+  } catch (e) {
+    if (mounted) {
       setState(() {
+        _error = 'Failed to load class data';
         _isLoading = false;
       });
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Failed to load class data';
-          _isLoading = false;
-        });
-      }
     }
   }
-
+}
   Future<void> _handleFileDownload(String fileId, String fileName, String fileUrl) async {
     try {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -258,6 +292,265 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
         );
       }
     }
+  }
+
+  // Toggle like on a post (optimistic UI)
+  Future<void> _toggleLikePostAt(int index) async {
+    final dynamic raw = _posts[index];
+    if (raw == null || raw is! Map<String, dynamic>) return;
+    final post = raw as Map<String, dynamic>;
+    final String postId = (post['_id'] ?? post['id'] ?? '').toString();
+    if (postId.isEmpty) return;
+
+    final prevLiked = (post['likedByCurrentUser'] ?? post['liked'] ?? false) as bool;
+    final prevLikes = (post['likesCount'] ?? (post['likes'] is List ? (post['likes'] as List).length : 0)) as int;
+
+    // Optimistic update
+    setState(() {
+      post['likedByCurrentUser'] = !prevLiked;
+      post['likesCount'] = prevLiked ? (prevLikes - 1) : (prevLikes + 1);
+    });
+
+    try {
+      final res = await ApiService.toggleLikePost(classId: widget.classId, postId: postId);
+      if (res['success'] != true) {
+        // revert
+        setState(() {
+          post['likedByCurrentUser'] = prevLiked;
+          post['likesCount'] = prevLikes;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(res['message'] ?? 'Failed to like post'), backgroundColor: Colors.red),
+          );
+        }
+      } else {
+        // sync counts if server returned authoritative value
+        if (res.containsKey('likesCount')) {
+          setState(() {
+            post['likesCount'] = res['likesCount'];
+            post['likedByCurrentUser'] = res['liked'] ?? post['likedByCurrentUser'];
+          });
+        }
+      }
+    } catch (e) {
+      // revert on error
+      setState(() {
+        post['likedByCurrentUser'] = prevLiked;
+        post['likesCount'] = prevLikes;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Network error: ${e.toString()}'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  // Show dialog to add a comment
+  Future<void> _showCommentDialog(int index) async {
+    final dynamic raw = _posts[index];
+    if (raw == null || raw is! Map<String, dynamic>) return;
+    final post = raw as Map<String, dynamic>;
+    final String postId = (post['_id'] ?? post['id'] ?? '').toString();
+    if (postId.isEmpty) return;
+
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Comment'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(hintText: 'Write your comment...'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () async {
+              final text = controller.text.trim();
+              if (text.isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Post'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != true) return;
+    final text = controller.text.trim();
+    if (text.isEmpty) return;
+
+    // Diagnostic log
+    try { debugPrint('[ClassDetail] _showCommentDialog BEFORE index=$index commentsLen=${(post['comments'] is List ? (post['comments'] as List).length : -1)} commentsCount=${post['commentsCount'] ?? 'n/a'}'); } catch (_) {}
+
+    // Optimistic UI: increment comment count
+    final prevComments = post['comments'] is List ? (post['comments'] as List).length : (post['commentsCount'] ?? 0);
+    setState(() {
+      if (post['comments'] is List) {
+        // push a lightweight placeholder comment
+        (post['comments'] as List).add({
+          'author': {'name': 'You'},
+          'content': text,   
+          'createdAt': DateTime.now().toIso8601String(),
+        });
+      } else {
+        post['commentsCount'] = prevComments + 1;
+      }
+    });
+    try { debugPrint('[ClassDetail] _showCommentDialog AFTER optimistic index=$index commentsLen=${(post['comments'] is List ? (post['comments'] as List).length : -1)} commentsCount=${post['commentsCount'] ?? 'n/a'}'); } catch (_) {}
+
+    try {
+      final res = await ApiService.addPostComment(classId: widget.classId, postId: postId, text: text);
+      if (res['success'] != true) {
+        // revert
+        setState(() {
+          if (post['comments'] is List) {
+            (post['comments'] as List).removeLast();
+          } else {
+            post['commentsCount'] = prevComments;
+          }
+        });
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message'] ?? 'Failed to add comment'), backgroundColor: Colors.red));
+      } else {
+        // if server returned full comment, replace the placeholder
+        if (res.containsKey('comment')) {
+          setState(() {
+            if (post['comments'] is List) {
+              (post['comments'] as List).removeLast();
+              (post['comments'] as List).add(res['comment']);
+            } else {
+              post['commentsCount'] = (post['commentsCount'] ?? prevComments) + 1;
+            }
+          });
+          try { debugPrint('[ClassDetail] _showCommentDialog SERVER returned comment index=$index commentsLen=${(post['comments'] is List ? (post['comments'] as List).length : -1)}'); } catch (_) {}
+        }
+      }
+    } catch (e) {
+      // revert
+      setState(() {
+        if (post['comments'] is List) {
+          (post['comments'] as List).removeLast();
+        } else {
+          post['commentsCount'] = prevComments;
+        }
+      });
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Network error: ${e.toString()}'), backgroundColor: Colors.red));
+    }
+  }
+
+  // Show full comments for a post
+  Future<void> _showCommentsFull(int index) async {
+    if (index < 0 || index >= _posts.length) return;
+    final raw = _posts[index];
+    if (raw == null || raw is! Map<String, dynamic>) return;
+    final post = raw as Map<String, dynamic>;
+    final String postId = (post['_id'] ?? post['id'] ?? '').toString();
+    if (postId.isEmpty) return;
+
+    // Try to use in-memory comments if present
+    List comments = [];
+    if (post['comments'] is List) {
+      comments = List.from(post['comments']);
+    } else {
+      // Attempt a lightweight refresh of posts to populate comments
+      await _loadClassData();
+      final refreshed = _posts.firstWhere((p) => (p['_id'] ?? p['id'] ?? '').toString() == postId, orElse: () => null);
+      if (refreshed != null && refreshed is Map && refreshed['comments'] is List) {
+        comments = List.from(refreshed['comments']);
+      }
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Comments', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: comments.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No comments yet',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )                        : ListView.separated(
+                            controller: controller,
+                            itemBuilder: (c, i) {
+                              final cm = comments[i];
+                              final author = (cm is Map && cm['author'] != null)
+                                  ? (cm['author'] is Map ? (cm['author']['name'] ?? 'Unknown') : cm['author'].toString())
+                                  : (cm is Map ? (cm['authorName'] ?? 'Unknown') : 'Unknown');
+                              final text = cm is Map ? (cm['content'] ?? cm['text'] ?? '') : cm.toString();
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    AvatarWidget(
+                                      initials: _getInitials(author),
+                                      image: (cm is Map && cm['author'] is Map) ? (cm['author']['profileImage'] as String?) : null,
+                                      radius: 18,
+                                      backgroundColor: const Color(0xFFEDF2FF),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF8FAFF),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.blue.shade50),
+                                        ),
+                                        child: Text(
+                                          text,
+                                          style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            separatorBuilder: (_, __) => const SizedBox(height: 4),
+                            itemCount: comments.length,
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   String _formatDate(String dateStr) {
@@ -332,7 +625,10 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
-              isScrollable: true,
+              // Make tabs evenly take up available width
+              isScrollable: false,
+              // Remove extra horizontal padding so spacing is exact
+              labelPadding: EdgeInsets.zero,
               tabs: const [
                 Tab(text: 'Posts'),
                 Tab(text: 'Files'),
@@ -437,6 +733,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
         separatorBuilder: (context, index) => const SizedBox(height: 12),
         itemBuilder: (context, index) {
           final post = _posts[index];
+          try { debugPrint('[ClassDetail] post index=$index id=${post['_id'] ?? post['id']} commentsListLen=${(post['comments'] is List ? (post['comments'] as List).length : -1)} commentsCount=${post['commentsCount'] ?? 'n/a'}'); } catch (_) {}
           final author = post['author'] as Map<String, dynamic>? ?? {};
           final authorName = author['name'] ?? 'Unknown';
 
@@ -459,17 +756,10 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
+                    AvatarWidget(
+                      initials: _getInitials(authorName),
+                      image: author['profileImage'] as String?,
                       radius: 20,
-                      backgroundColor: const Color(0xFF2463EB),
-                      child: Text(
-                        _getInitials(authorName),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -504,6 +794,130 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                     color: Color(0xFF1E293B),
                   ),
                 ),
+                const SizedBox(height: 12),
+                // Like / Comment row
+                Builder(builder: (context) {
+                  final likesCount = post['likesCount'] ?? (post['likes'] is List ? (post['likes'] as List).length : 0);
+                  final liked = post['likedByCurrentUser'] ?? post['liked'] ?? false;
+                  final commentsCount = post['comments'] is List
+                      ? (post['comments'] as List).length
+                      : (post['commentsCount'] ?? 0);
+
+                  return Row(
+                    children: [
+                      InkWell(
+                        onTap: () => _toggleLikePostAt(index),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          child: Row(
+                            children: [
+                              Icon(
+                                liked ? Icons.favorite : Icons.favorite_border,
+                                size: 18,
+                                color: liked ? Colors.red : const Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$likesCount',
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      InkWell(
+                        onTap: () => _showCommentDialog(index),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.mode_comment_outlined,
+                                size: 18,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '$commentsCount',
+                                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                const SizedBox(height: 12),                // Recent comments preview (show up to 3)
+                Builder(builder: (context) {
+                  final rawComments = post['comments'];
+                  final List comments = rawComments is List ? rawComments : [];
+                  if (comments.isEmpty) {
+                    // If server only provided a count, show a tappable label
+                    final count = post['commentsCount'] ?? 0;
+                    if (count > 0) {
+                      return GestureDetector(
+                        onTap: () => _showCommentsFull(index),
+                        child: Text(
+                          '$count comments',
+                          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  }
+
+                  final toShow = comments.length > 3 ? comments.sublist(0, 3) : comments;
+                  return Column(
+                    children: toShow.map<Widget>((c) {
+                      final text = c is Map ? (c['content'] ?? c['text'] ?? '') : c.toString();
+                      final author = (c is Map && c['author'] != null)
+                          ? (c['author'] is Map ? c['author']['name'] ?? 'Unknown' : c['author'].toString())
+                          : (c is Map ? (c['authorName'] ?? 'Unknown') : 'Unknown');
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            AvatarWidget(
+                              initials: _getInitials(author),
+                              image: (c is Map && c['author'] is Map) ? (c['author']['profileImage'] as String?) : null,
+                              radius: 14,
+                              backgroundColor: const Color(0xFFEDF2FF),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFF),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  text,
+                                  style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList()
+                      ..addAll(comments.length > 3
+                          ? [
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () => _showCommentsFull(index),
+                                child: const Text('View all comments', style: TextStyle(color: Color(0xFF2463EB), fontSize: 13)),
+                              )
+                            ]
+                          : []),
+                  );
+                }),
+                const SizedBox(height: 12),
               ],
             ),
           );
@@ -664,11 +1078,13 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _tests.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
+        separatorBuilder: (context, index) => const SizedBox(height: 12),        itemBuilder: (context, index) {
           final test = _tests[index];
           final isMcq = test['type'] == 'mcq';
           final questions = test['questions'] as List<dynamic>? ?? [];
+          final segmentationCases = test['segmentationCases'] as List<dynamic>? ?? [];
+          final itemCount = isMcq ? questions.length : segmentationCases.length;
+          final itemLabel = isMcq ? 'questions' : 'cases';
 
           return InkWell(
             onTap: () => widget.onOpenAssessment(test['_id'], test['type']),
@@ -738,7 +1154,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                isMcq ? 'MCQ' : 'Drawing',
+                                isMcq ? 'MCQ' : 'Segmentation',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
@@ -754,7 +1170,7 @@ class _ClassDetailScreenState extends State<ClassDetailScreen>
                         Row(
                           children: [
                             Text(
-                              '${questions.length} questions',
+                              '$itemCount $itemLabel',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF64748B),

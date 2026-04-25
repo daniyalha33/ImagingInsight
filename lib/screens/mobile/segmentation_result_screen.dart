@@ -1,565 +1,358 @@
 // lib/screens/mobile/segmentation_result_screen.dart
+
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import '../../services/api_service.dart';
+import 'segmentation_quiz_screen.dart' show CaseResult;
 
 class SegmentationResultScreen extends StatefulWidget {
+  final String testId;
+  final String testTitle;
+  final List<CaseResult> caseResults;
+  final Map<String, dynamic> overallData;
   final VoidCallback onBack;
 
   const SegmentationResultScreen({
     Key? key,
+    required this.testId,
+    required this.testTitle,
+    required this.caseResults,
+    required this.overallData,
     required this.onBack,
   }) : super(key: key);
 
   @override
-  State<SegmentationResultScreen> createState() =>
-      _SegmentationResultScreenState();
+  State<SegmentationResultScreen> createState() => _SegmentationResultScreenState();
 }
 
 class _SegmentationResultScreenState extends State<SegmentationResultScreen> {
+  int _selectedCaseTab = 0;
   bool _showGroundTruth = false;
+  ui.Image? _groundTruthImage;
+  bool _gtLoading = false;
 
-  final String _grade = 'A';
-  final double _matchPercentage = 91.4;
-  final double _diceScore = 91.4;
-  final double _iou = 84.2;
-  final double _precision = 89.5;
-  final double _recall = 93.4;
+  Future<void> _loadGroundTruth(int caseIndex) async {
+    setState(() { _gtLoading = true; _groundTruthImage = null; });
+    try {
+      final bytes = await ApiService.getSegmentationGroundTruth(
+        testId:    widget.testId,
+        caseIndex: caseIndex,
+      );
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      if (mounted) setState(() { _groundTruthImage = frame.image; _gtLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _gtLoading = false);
+    }
+  }
+
+  Color _gradeColor(String? grade) {
+    switch (grade) {
+      case 'A': return Colors.green;
+      case 'B': return Colors.lightGreen;
+      case 'C': return Colors.orange;
+      case 'D': return Colors.deepOrange;
+      default:  return Colors.red;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final overall     = widget.overallData;
+    final overallGrade = overall['overallGrade'] as String? ?? 'F';
+    final overallScore = (overall['overallScore'] as num?)?.toDouble() ?? 0;
+    final attempted    = (overall['casesAttempted'] as num?)?.toInt() ?? 0;
+    final total        = (overall['casesTotal'] as num?)?.toInt() ?? widget.caseResults.length;
+
+    final attempted_results = widget.caseResults.where((r) => r.attempted).toList();
+
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          // Header
+      backgroundColor: const Color(0xFFF8FAFC),      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.home),
+          onPressed: () {
+            // Guard against setState after dispose
+            if (mounted) widget.onBack();
+          },
+        ),
+        title: const Text('Test Results'),
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF1E40AF),
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(height: 1, color: Colors.blue.shade100),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(children: [
+
+          // ── Overall Grade Card ────────────────────────────────────────────
           Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Colors.grey.shade200),
+              gradient: LinearGradient(
+                colors: [_gradeColor(overallGrade).withOpacity(0.15), Colors.white],
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
               ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _gradeColor(overallGrade).withOpacity(0.4)),
             ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-                child: const Text(
-                  'Quiz Results',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E293B),
-                  ),
+            child: Column(children: [
+              Text(
+                overallGrade,
+                style: TextStyle(
+                  fontSize: 64, fontWeight: FontWeight.bold,
+                  color: _gradeColor(overallGrade),
                 ),
               ),
-            ),
+              Text(
+                '${overallScore.toStringAsFixed(1)}% avg Dice score',
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '$attempted / $total cases attempted',
+                style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+              ),
+            ]),
           ),
 
-          // Content
-          Expanded(
-            child: SingleChildScrollView(
+          const SizedBox(height: 16),
+
+          // ── Aggregate metrics ────────────────────────────────────────────
+          if (attempted_results.isNotEmpty) ...[
+            Row(children: [
+              _MetricCard(
+                title: 'Avg Dice',
+                value: attempted_results.map((r) => r.diceScore ?? 0).reduce((a, b) => a + b) / attempted_results.length,
+                icon: Icons.center_focus_strong, color: const Color(0xFF2563EB),
+              ),
+              const SizedBox(width: 8),
+              _MetricCard(
+                title: 'Avg IoU',
+                value: attempted_results.map((r) => r.iouScore ?? 0).reduce((a, b) => a + b) / attempted_results.length,
+                icon: Icons.all_inclusive, color: Colors.purple,
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              _MetricCard(
+                title: 'Avg Precision',
+                value: attempted_results.map((r) => r.precision ?? 0).reduce((a, b) => a + b) / attempted_results.length,
+                icon: Icons.gps_fixed, color: Colors.green,
+              ),
+              const SizedBox(width: 8),
+              _MetricCard(
+                title: 'Avg Recall',
+                value: attempted_results.map((r) => r.recall ?? 0).reduce((a, b) => a + b) / attempted_results.length,
+                icon: Icons.check_circle, color: Colors.orange,
+              ),
+            ]),
+          ],
+
+          const SizedBox(height: 16),
+
+          // ── Per-Case breakdown ───────────────────────────────────────────
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.shade100)),
+            child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // Grade Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(32),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD4E5D4),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          'Grade: $_grade',
-                          style: const TextStyle(
-                            fontSize: 48,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF059669),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '$_matchPercentage% Match',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Per-Case Results',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
+                const SizedBox(height: 12),
 
-                  const SizedBox(height: 16),
-
-                  // Metrics Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    childAspectRatio: 1,
-                    children: [
-                      _buildMetricCard(
-                        'Dice Score',
-                        '$_diceScore%',
-                        const Color(0xFF3B82F6),
-                        const Color(0xFFDBEAFE),
-                        _buildDiceIcon(),
-                      ),
-                      _buildMetricCard(
-                        'IoU',
-                        '$_iou%',
-                        const Color(0xFFA855F7),
-                        const Color(0xFFF3E8FF),
-                        _buildIoUIcon(),
-                      ),
-                      _buildMetricCard(
-                        'Precision',
-                        '$_precision%',
-                        const Color(0xFF22C55E),
-                        const Color(0xFFDCFCE7),
-                        _buildPrecisionIcon(),
-                      ),
-                      _buildMetricCard(
-                        'Recall',
-                        '$_recall%',
-                        const Color(0xFFF59E0B),
-                        const Color(0xFFFEF3C7),
-                        _buildRecallIcon(),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Feedback Card
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
+                // Case tabs
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: List.generate(widget.caseResults.length, (i) {
+                    final active = i == _selectedCaseTab;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() { _selectedCaseTab = i; _showGroundTruth = false; _groundTruthImage = null; });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFDBEAFE),
-                            borderRadius: BorderRadius.circular(12),
+                            color: active ? const Color(0xFF2563EB) : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Icon(
-                            Icons.chat_bubble,
-                            color: Color(0xFF3B82F6),
-                            size: 20,
-                          ),
+                          child: Text('Case ${i + 1}',
+                            style: TextStyle(color: active ? Colors.white : const Color(0xFF64748B),
+                              fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: const [
-                              Text(
-                                'Feedback',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1E293B),
-                                ),
-                              ),
-                              SizedBox(height: 8),
-                              Text(
-                                '• Excellent segmentation! 🎉',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF1E293B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    );
+                  })),
+                ),
+
+                const SizedBox(height: 16),
+                _buildCaseDetail(widget.caseResults[_selectedCaseTab], _selectedCaseTab),
+              ]),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // ── Ground Truth ─────────────────────────────────────────────────
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.shade100)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  const Text('Ground Truth',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF))),
+                  Switch(
+                    value: _showGroundTruth,
+                    activeColor: const Color(0xFF2563EB),
+                    onChanged: (val) {
+                      setState(() => _showGroundTruth = val);
+                      if (val) _loadGroundTruth(_selectedCaseTab);
+                    },
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // Ground Truth Card
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Ground Truth',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1E293B),
-                              ),
-                            ),
-                            Switch(
-                              value: _showGroundTruth,
-                              onChanged: (value) {
-                                setState(() {
-                                  _showGroundTruth = value;
-                                });
-                              },
-                              activeColor: const Color(0xFF2463EB),
-                            ),
-                          ],
-                        ),
-                        if (_showGroundTruth) ...[
-                          const SizedBox(height: 16),
-                          AspectRatio(
-                            aspectRatio: 1,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: CustomPaint(
-                                painter: GroundTruthPainter(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 100), // Space for bottom buttons
+                ]),
+                if (_showGroundTruth) ...[
+                  const SizedBox(height: 12),
+                  _gtLoading
+                      ? const Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+                      : _groundTruthImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: RawImage(image: _groundTruthImage, fit: BoxFit.contain),
+                            )
+                          : const Text('Failed to load ground truth',
+                              style: TextStyle(color: Color(0xFF94A3B8))),
                 ],
-              ),
+              ]),
             ),
           ),
-        ],
-      ),
 
-      // Bottom Action Buttons
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            top: BorderSide(color: Colors.grey.shade200),
+          const SizedBox(height: 24),
+
+          // ── Actions ──────────────────────────────────────────────────────
+          ElevatedButton.icon(
+            onPressed: widget.onBack, 
+            icon: const Icon(Icons.home),
+            label: const Text('Back to Dashboard'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              minimumSize: const Size(double.infinity, 50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
           ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildCaseDetail(CaseResult r, int idx) {
+    if (!r.attempted) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
+        child: const Row(children: [
+          Icon(Icons.cancel_outlined, color: Colors.grey),
+          SizedBox(width: 8),
+          Text('This case was not attempted', style: TextStyle(color: Color(0xFF64748B))),
+        ]),
+      );
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // Grade badge
+      Row(children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: _gradeColor(r.grade).withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text('${r.grade ?? "?"}',
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: _gradeColor(r.grade))),
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onBack,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Try Another'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1E293B),
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: widget.onBack,
-                    icon: const Icon(Icons.home, size: 18),
-                    label: const Text('Home'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2463EB),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+        const SizedBox(width: 16),
+        Text('${r.diceScore?.toStringAsFixed(1) ?? "—"}% Dice',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+      ]),
 
-  Widget _buildMetricCard(
-    String label,
-    String value,
-    Color valueColor,
-    Color bgColor,
-    Widget icon,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: icon,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: valueColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+      const SizedBox(height: 12),
 
-  Widget _buildDiceIcon() {
-    return Center(
-      child: CustomPaint(
-        size: const Size(24, 24),
-        painter: DiceIconPainter(),
-      ),
-    );
-  }
+      // Metrics grid
+      Row(children: [
+        _SmallMetric(label: 'IoU',       value: r.iouScore),
+        const SizedBox(width: 8),
+        _SmallMetric(label: 'Precision', value: r.precision),
+        const SizedBox(width: 8),
+        _SmallMetric(label: 'Recall',    value: r.recall),
+      ]),
 
-  Widget _buildIoUIcon() {
-    return Center(
-      child: CustomPaint(
-        size: const Size(24, 24),
-        painter: IoUIconPainter(),
-      ),
-    );
-  }
+      const SizedBox(height: 12),
 
-  Widget _buildPrecisionIcon() {
-    return Center(
-      child: CustomPaint(
-        size: const Size(24, 24),
-        painter: PrecisionIconPainter(),
-      ),
-    );
-  }
-
-  Widget _buildRecallIcon() {
-    return const Center(
-      child: Icon(
-        Icons.check,
-        color: Color(0xFFF59E0B),
-        size: 28,
-      ),
-    );
+      // Feedback
+      ...r.feedback.map((f) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('• ', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+            Expanded(child: Text(f, style: const TextStyle(fontSize: 14, color: Color(0xFF334155)))),
+          ]))),
+    ]);
   }
 }
 
-// Custom Painters for Icons
-class DiceIconPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF3B82F6)
-      ..style = PaintingStyle.fill;
+// ─── Small widgets ────────────────────────────────────────────────────────────
 
-    // Vertical bar
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.4, size.height * 0.2, size.width * 0.2,
-            size.height * 0.6),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
+class _MetricCard extends StatelessWidget {
+  final String  title;
+  final double  value;
+  final IconData icon;
+  final Color   color;
 
-    // Horizontal bar
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(size.width * 0.2, size.height * 0.4, size.width * 0.6,
-            size.height * 0.2),
-        const Radius.circular(1),
-      ),
-      paint,
-    );
-  }
+  const _MetricCard({required this.title, required this.value, required this.icon, required this.color});
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) => Expanded(child: Card(
+    elevation: 0,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.blue.shade50)),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(children: [
+        Icon(icon, size: 28, color: color),
+        const SizedBox(height: 6),
+        Text(title, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), textAlign: TextAlign.center),
+        const SizedBox(height: 2),
+        Text('${value.toStringAsFixed(1)}%',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+      ]),
+    ),
+  ));
 }
 
-class IoUIconPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFA855F7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
-    // Left circle
-    canvas.drawCircle(
-      Offset(size.width * 0.35, size.height * 0.5),
-      size.width * 0.3,
-      paint,
-    );
-
-    // Right circle
-    canvas.drawCircle(
-      Offset(size.width * 0.65, size.height * 0.5),
-      size.width * 0.3,
-      paint,
-    );
-  }
+class _SmallMetric extends StatelessWidget {
+  final String  label;
+  final double? value;
+  const _SmallMetric({required this.label, required this.value});
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class PrecisionIconPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF22C55E)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
-    // Outer circle
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.5),
-      size.width * 0.35,
-      paint,
-    );
-
-    // Middle circle
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.5),
-      size.width * 0.18,
-      paint,
-    );
-
-    // Center dot
-    paint.style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(size.width * 0.5, size.height * 0.5),
-      size.width * 0.07,
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class GroundTruthPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white;
-
-    // Main liver-like shape
-    final path = Path();
-    path.moveTo(size.width * 0.5, size.height * 0.2);
-    path.cubicTo(
-      size.width * 0.7,
-      size.height * 0.2,
-      size.width * 0.8,
-      size.height * 0.3,
-      size.width * 0.8,
-      size.height * 0.45,
-    );
-    path.cubicTo(
-      size.width * 0.8,
-      size.height * 0.55,
-      size.width * 0.75,
-      size.height * 0.65,
-      size.width * 0.65,
-      size.height * 0.7,
-    );
-    path.cubicTo(
-      size.width * 0.6,
-      size.height * 0.725,
-      size.width * 0.55,
-      size.height * 0.7375,
-      size.width * 0.5,
-      size.height * 0.7375,
-    );
-    path.cubicTo(
-      size.width * 0.45,
-      size.height * 0.7375,
-      size.width * 0.4,
-      size.height * 0.725,
-      size.width * 0.35,
-      size.height * 0.7,
-    );
-    path.cubicTo(
-      size.width * 0.25,
-      size.height * 0.65,
-      size.width * 0.2,
-      size.height * 0.55,
-      size.width * 0.2,
-      size.height * 0.45,
-    );
-    path.cubicTo(
-      size.width * 0.2,
-      size.height * 0.3,
-      size.width * 0.3,
-      size.height * 0.2,
-      size.width * 0.5,
-      size.height * 0.2,
-    );
-    path.close();
-    canvas.drawPath(path, paint);
-
-    // Left kidney
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.375, size.height * 0.625),
-        width: size.width * 0.15,
-        height: size.height * 0.225,
+  Widget build(BuildContext context) => Expanded(child: Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(8)),
+    child: Column(children: [
+      Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+      const SizedBox(height: 2),
+      Text(
+        value != null ? '${value!.toStringAsFixed(1)}%' : '—',
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
       ),
-      paint,
-    );
-
-    // Right kidney
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.625, size.height * 0.625),
-        width: size.width * 0.14,
-        height: size.height * 0.21,
-      ),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+    ]),
+  ));
 }

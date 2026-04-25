@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../services/api_service.dart';
+import '../../widgets/avatar_widget.dart';
 
 class ChatMessage {
   final String id;
@@ -45,6 +46,7 @@ class ChatMessage {
 class ChatScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
+  final String? teacherProfileImage;
   final String? chatId;
   final VoidCallback onBack;
 
@@ -52,6 +54,7 @@ class ChatScreen extends StatefulWidget {
     Key? key,
     required this.teacherId,
     required this.teacherName,
+    this.teacherProfileImage,
     this.chatId,
     required this.onBack,
   }) : super(key: key);
@@ -265,8 +268,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: Row(
-                  children: [
-                    IconButton(
+                  children: [                    IconButton(
                       onPressed: widget.onBack,
                       icon: const Icon(Icons.arrow_back),
                       color: const Color(0xFF1E40AF),
@@ -274,23 +276,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       constraints: const BoxConstraints(),
                     ),
                     const SizedBox(width: 12),
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF2463EB),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          _getInitials(widget.teacherName),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                    AvatarWidget(
+                      initials: _getInitials(widget.teacherName),
+                      image: widget.teacherProfileImage,
+                      radius: 20,
+                      backgroundColor: const Color(0xFF2463EB),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -393,10 +383,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         : ListView.builder(
                             controller: _scrollController,
                             padding: const EdgeInsets.all(16),
-                            itemCount: _messages.length,
-                            itemBuilder: (context, index) {
+                            itemCount: _messages.length,                            itemBuilder: (context, index) {
                               final message = _messages[index];
-                              final isStudent = message.senderRole == 'student';
 
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),

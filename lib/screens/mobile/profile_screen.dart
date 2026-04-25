@@ -1,6 +1,7 @@
 // lib/screens/mobile/profile_screen.dart
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
+import '../../widgets/avatar_widget.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback onLogout;
@@ -181,7 +182,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF2463EB),
             ),
-            child: const Text('Save'),
+            child: const Text('Save',
+            style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -401,36 +404,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   border: Border.all(color: Colors.blue.shade100),
                                 ),
                                 child: Column(
-                                  children: [
-                                    Row(
+                                  children: [                                    Row(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         // Avatar
-                                        Container(
-                                          width: 64,
-                                          height: 64,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF2463EB),
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: const Color(0xFF2463EB),
-                                              width: 2,
-                                            ),
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              userName.length >= 2
-                                                  ? userName.substring(0, 2).toUpperCase()
-                                                  : userName.isNotEmpty
-                                                      ? userName.substring(0, 1).toUpperCase()
-                                                      : '??',
-                                              style: const TextStyle(
-                                                fontSize: 24,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                          ),
+                                        AvatarWidget(
+                                          initials: userName.length >= 2
+                                              ? userName.substring(0, 2).toUpperCase()
+                                              : userName.isNotEmpty
+                                                  ? userName.substring(0, 1).toUpperCase()
+                                                  : '??',
+                                          image: profileImage,
+                                          radius: 32,
+                                          backgroundColor: const Color(0xFF2463EB),
                                         ),
 
                                         const SizedBox(width: 16),

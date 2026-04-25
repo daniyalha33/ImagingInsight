@@ -6,6 +6,7 @@ import 'services/api_service.dart';
 import 'screens/student_login_screen.dart';
 import 'screens/student_signup_screen.dart';
 import 'screens/password_recovery_screen.dart';
+import 'screens/reset_password_screen.dart';
 import 'screens/student_portal.dart';
 
 // Models
@@ -81,6 +82,7 @@ enum AppScreen {
   studentLogin,
   studentSignup,
   passwordRecovery,
+  resetPassword,
   studentPortal,
 }
 
@@ -94,6 +96,7 @@ class AppNavigator extends StatefulWidget {
 class _AppNavigatorState extends State<AppNavigator> {
   AppScreen _currentScreen = AppScreen.loading;
   UserData? _userData;
+  String? _resetToken;
 
   @override
   void initState() {
@@ -191,19 +194,49 @@ class _AppNavigatorState extends State<AppNavigator> {
               setState(() => _currentScreen = AppScreen.studentSignup),
           onNavigateToPasswordRecovery: () =>
               setState(() => _currentScreen = AppScreen.passwordRecovery),
-        );
-
-      case AppScreen.studentSignup:
+        );      case AppScreen.studentSignup:
         return StudentSignUpScreen(
           onNavigateToLogin: () =>
               setState(() => _currentScreen = AppScreen.studentLogin),
           onSignUpSuccess: _handleSignUpSuccess,
-        );
-
-      case AppScreen.passwordRecovery:
+        );      case AppScreen.passwordRecovery:
         return PasswordRecoveryScreen(
           onBackToLogin: () =>
               setState(() => _currentScreen = AppScreen.studentLogin),
+          onResetTokenReceived: (token) {
+            // Navigate directly to reset screen with the token
+            setState(() {
+              _resetToken = token;
+              _currentScreen = AppScreen.resetPassword;
+            });
+          },
+        );
+
+      case AppScreen.resetPassword:
+        return ResetPasswordScreen(
+          resetToken: _resetToken ?? '',
+          onSuccess: () {
+            setState(() {
+              _resetToken = null;
+              _currentScreen = AppScreen.studentLogin;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 12),
+                    Text('Password reset! Please log in.'),
+                  ],
+                ),
+                backgroundColor: const Color(0xFF10B981),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          },
+          onBackToLogin: () => setState(() => _currentScreen = AppScreen.studentLogin),
         );
 
       case AppScreen.studentPortal:

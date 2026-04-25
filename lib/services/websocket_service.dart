@@ -7,9 +7,9 @@ class WebSocketService {
   static final WebSocketService _instance = WebSocketService._internal();
   factory WebSocketService() => _instance;
   WebSocketService._internal();
-
   IO.Socket? _socket;
   bool _isConnected = false;
+  bool _isConnecting = false;
 
   // Track active rooms so we can re-join after reconnection
   final Set<String> _activeClassRooms = {};
@@ -17,19 +17,19 @@ class WebSocketService {
   final Map<String, List<Function>> _eventListeners = {};
 
   bool get isConnected => _isConnected;
-
   Future<void> connect() async {
-    if (_isConnected) {
-      debugPrint('🔵 Socket already connected, skipping');
+    if (_isConnected || _isConnecting) {
+      debugPrint('🔵 Socket already ${_isConnected ? "connected" : "connecting"}, skipping');
       return;
     }
+    _isConnecting = true;
 
     final token = await ApiService.getToken();
     if (token == null) {
       debugPrint('🔴 Socket: No token available - cannot connect');
       return;
-    }    // Use the same base URL as ApiService (without /api)
-    const String socketUrl = 'http://10.113.82.41:5000';
+    }    // Derive socket URL from ApiService.baseUrl to prevent IP drift
+    final String socketUrl = ApiService.baseUrl.replaceAll('/api', '');
     debugPrint('🟡 Socket: Attempting to connect to $socketUrl ...');
 
     try {
@@ -40,14 +40,17 @@ class WebSocketService {
             .disableAutoConnect()
             .setAuth({'token': token})
             .build(),
-      );
-
-      _socket!.connect();
+      );      _socket!.connect();
       debugPrint('🟡 Socket: connect() called, waiting for response...');
 
-      _socket!.onConnect((_) {
+      // Catch-all: log EVERY event the socket receives (for debugging)
+      _socket!.onAny((event, data) {
+        debugPrint('📡 Socket: received event "$event" with data: $data');
+      });_socket!.onConnect((_) {
         debugPrint('🟢 Socket: Connected successfully! ✅');
+        debugPrint('🟢 Socket: socket.id = ${_socket?.id}');
         _isConnected = true;
+        _isConnecting = false;
 
         // Re-join all active class rooms after reconnection
         if (_activeClassRooms.isNotEmpty) {
@@ -64,11 +67,10 @@ class WebSocketService {
         debugPrint('🔴 Socket: Disconnected');
         _isConnected = false;
         _notifyListeners('connection:status', {'connected': false});
-      });
-
-      _socket!.onConnectError((data) {
+      });      _socket!.onConnectError((data) {
         debugPrint('🔴 Socket: Connection Error: $data');
         _isConnected = false;
+        _isConnecting = false;
       });
 
       _socket!.onError((data) {
@@ -132,49 +134,38 @@ class WebSocketService {
       _socket!.on('user:offline', (data) {
         debugPrint('WebSocket: User offline: $data');
         _notifyListeners('user:offline', data);
-      });
-
-    } catch (e) {
+      });    } catch (e) {
       debugPrint('🔴 Socket: Exception during connect: $e');
       _isConnected = false;
-    }
-  }
-  void joinClass(String classId) {
-    // Backend expects room name with "class_" prefix
-    final roomName = 'class_$classId';
-    
-    // Always track the room regardless of connection state
-    _activeClassRooms.add(roomName);
+      _isConnecting = false;
+    }}  void joinClass(String classId) {
+    // Backend adds "class_" prefix, so send raw classId
+    // The final room name will be "class_${classId}"
+    _activeClassRooms.add(classId);
 
-    if (_isConnected && _socket != null) {
-      _socket!.emit('class:join', roomName);
-      debugPrint('📌 Socket: Joined class room: $roomName');
+    if (_isConnected && _socket != null) {      // Send raw classId - backend will create room "class_${classId}"
+      _socket!.emit('class:join', classId);
+      debugPrint('📌 Socket: Sent class:join with classId: $classId (room will be class_$classId)');
     } else {
-      // Not connected yet — room is saved in _activeClassRooms
-      // and will be joined automatically in onConnect
-      debugPrint('⚠️ Socket: Not connected yet — class $roomName queued for join on reconnect');
+      debugPrint('⚠️ Socket: Not connected yet — class $classId queued for join on reconnect');
     }
   }
 
   void leaveClass(String classId) {
-    // Backend expects room name with "class_" prefix
-    final roomName = 'class_$classId';
-    
-    // Remove from tracking so we don't re-join after reconnection
-    _activeClassRooms.remove(roomName);
+    _activeClassRooms.remove(classId);
 
     if (_isConnected && _socket != null) {
-      _socket!.emit('class:leave', roomName);
-      debugPrint('📌 Socket: Left class room: $roomName');
+      _socket!.emit('class:leave', classId);
+      debugPrint('📌 Socket: Left class room: $classId');
     }
   }
-
   void disconnect() {
     if (_socket != null) {
       _socket!.disconnect();
       _socket!.dispose();
       _socket = null;
       _isConnected = false;
+      _isConnecting = false;
       debugPrint('🔴 Socket: Manually disconnected');
     }
   }
@@ -233,10 +224,22 @@ class WebSocketService {
       }
     }
   }
-
   Future<void> reconnect() async {
     disconnect();
     await Future.delayed(const Duration(seconds: 1));
     await connect();
+  }
+
+  /// Debug helper: prints socket state and active rooms
+  void printDebugInfo() {
+    debugPrint('═══════════ SOCKET DEBUG INFO ═══════════');
+    debugPrint('  connected: $_isConnected');
+    debugPrint('  socket id: ${_socket?.id}');
+    debugPrint('  active class rooms: $_activeClassRooms');
+    debugPrint('  event listeners: ${_eventListeners.keys.toList()}');
+    for (final key in _eventListeners.keys) {
+      debugPrint('    $key → ${_eventListeners[key]!.length} listener(s)');
+    }
+    debugPrint('═════════════════════════════════════════');
   }
 }

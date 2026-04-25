@@ -1,12 +1,15 @@
 // lib/screens/password_recovery_screen.dart
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 
 class PasswordRecoveryScreen extends StatefulWidget {
   final VoidCallback onBackToLogin;
+  final Function(String token)? onResetTokenReceived;
 
   const PasswordRecoveryScreen({
     Key? key,
     required this.onBackToLogin,
+    this.onResetTokenReceived,
   }) : super(key: key);
 
   @override
@@ -17,6 +20,8 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _emailController = TextEditingController();
   bool _isSubmitted = false;
+  bool _isLoading = false;
+  String _errorMessage = '';
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -53,17 +58,33 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen>
     _emailController.dispose();
     _animationController.dispose();
     super.dispose();
-  }
-
-  void _handleSubmit() {
-    if (_emailController.text.trim().isEmpty) return;
+  }  void _handleSubmit() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) return;
 
     setState(() {
-      _isSubmitted = true;
+      _isLoading = true;
+      _errorMessage = '';
     });
 
-    _animationController.reset();
-    _animationController.forward();
+    final result = await ApiService.forgotPassword(email: email);
+
+    if (mounted) {
+      if (result['success'] == true) {
+        // DEV: backend returned token directly, navigate straight to reset screen
+        if (result['resetToken'] != null && widget.onResetTokenReceived != null) {
+          widget.onResetTokenReceived!(result['resetToken']);
+          return;
+        }
+        // PROD: no token returned, show success message (email was sent)
+        setState(() => _isSubmitted = true);
+        _animationController.reset();
+        _animationController.forward();
+      } else {
+        setState(() => _errorMessage = result['message'] ?? 'Something went wrong');
+      }
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -208,16 +229,33 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen>
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16,
                             vertical: 16,
+                          ),                        ),
+                      ),
+                      if (_errorMessage.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Text(
+                            _errorMessage,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 32),
 
                       // Submit Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _handleSubmit,
+                          onPressed: _isLoading ? null : _handleSubmit,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF2563EB),
                             foregroundColor: Colors.white,
@@ -227,13 +265,22 @@ class _PasswordRecoveryScreenState extends State<PasswordRecoveryScreen>
                             ),
                             elevation: 0,
                           ),
-                          child: const Text(
-                            'Send Reset Link',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text(
+                                  'Send Reset Link',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 16),

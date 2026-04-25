@@ -1,11 +1,13 @@
 // lib/screens/mobile/chat_list_screen.dart
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
+import '../../widgets/avatar_widget.dart';
 
 class Teacher {
   final String id;
   final String name;
   final String avatar;
+  final String? profileImage;
   final String lastMessage;
   final DateTime? lastMessageTime;
   final int unreadCount;
@@ -16,6 +18,7 @@ class Teacher {
     required this.id,
     required this.name,
     required this.avatar,
+    this.profileImage,
     required this.lastMessage,
     this.lastMessageTime,
     this.unreadCount = 0,
@@ -28,6 +31,7 @@ class Teacher {
       id: json['teacherId'],
       name: json['teacherName'] ?? 'Teacher',
       avatar: _getInitials(json['teacherName'] ?? 'T'),
+      profileImage: json['teacherProfileImage'] as String?,
       lastMessage: json['lastMessage'] ?? '',
       lastMessageTime: json['lastMessageTime'] != null
           ? DateTime.parse(json['lastMessageTime'])
@@ -62,7 +66,7 @@ class Teacher {
 }
 
 class ChatListScreen extends StatefulWidget {
-  final Function(String teacherId, String teacherName, String? chatId) onSelectChat;
+  final Function(String teacherId, String teacherName, String? chatId, String? teacherProfileImage) onSelectChat;
 
   const ChatListScreen({
     Key? key,
@@ -289,10 +293,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
     );
   }
-
   Widget _buildTeacherCard(Teacher teacher) {
     return InkWell(
-      onTap: () => widget.onSelectChat(teacher.id, teacher.name, teacher.chatId),
+      onTap: () => widget.onSelectChat(teacher.id, teacher.name, teacher.chatId, teacher.profileImage),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -307,29 +310,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
               offset: const Offset(0, 2),
             ),
           ],
-        ),
-        child: Row(
+        ),        child: Row(
           children: [
             // Avatar
             Stack(
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF2463EB),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      teacher.avatar,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
+                AvatarWidget(
+                  initials: teacher.avatar,
+                  image: teacher.profileImage,
+                  radius: 24,
+                  backgroundColor: const Color(0xFF2463EB),
                 ),
                 if (teacher.unreadCount > 0)
                   Positioned(
